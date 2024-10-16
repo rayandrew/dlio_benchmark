@@ -7,7 +7,6 @@ stuff/
 *.un~
 hydra_log/
 
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -158,3 +157,6 @@ dmypy.json
 /.idea/
 /venv-quartz/
 venv-openmpi
+
+# Spack
+spack-env

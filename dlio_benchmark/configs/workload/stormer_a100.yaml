@@ -1,0 +1,39 @@
+model: stormer
+
+framework: pytorch
+
+workflow:
+  generate_data: False
+  train: True
+  checkpoint: False
+
+# dataset:
+#   data_folder: data/stormer-1G/
+#   format: hdf5
+#   num_files_train: 2920
+#   num_samples_per_file: 1
+#   record_length: 1104691456 # stormer load two files at once
+
+dataset:
+  data_folder: data/stormer/
+  format: hdf5
+  num_files_train: 2920
+  num_samples_per_file: 1
+  record_length: 1104691456
+  # simulate loading two files at once
+  chunking: True
+  chunk_size: 552345728
+
+reader:
+  data_loader: pytorch
+  batch_size: 1
+  read_threads: 6
+  file_shuffle: seed
+  preprocess_time: 0.477098
+  preprocess_time_stdev: 0.112886
+  prefetch_size: 10
+
+train:
+  epochs: 1
+  computation_time: 0.789605
+  computation_time_stdev: 0.341226
