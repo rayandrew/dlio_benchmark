@@ -3,8 +3,8 @@ model: stormer
 framework: pytorch
 
 workflow:
-  generate_data: False
-  train: True
+  generate_data: True
+  train: False
   checkpoint: False
 
 # dataset:
@@ -15,25 +15,37 @@ workflow:
 #   record_length: 1104691456 # stormer load two files at once
 
 dataset:
-  data_folder: data/stormer/
+  data_folder: /lus/eagle/projects/MDClimSim/rayandrew/dlio-benchmark/data/stormer
+  # data_folder: /local/scratch
   format: hdf5
   num_files_train: 2920
+  # num_files_train: 1460
   num_samples_per_file: 1
-  record_length: 1104691456
-  # simulate loading two files at once
-  chunking: True
-  chunk_size: 552345728
+  # record_length: 1104691456
+  record_length: 1104764644
+  enable_chunking: True
+  chunk_2d_dim: [16619, 33238]
+  # chunk_2d_dim: [16618, 33236]
 
 reader:
   data_loader: pytorch
   batch_size: 1
   read_threads: 6
   file_shuffle: seed
-  preprocess_time: 0.477098
-  preprocess_time_stdev: 0.112886
+  # preprocess_time: 0.477098
+  # preprocess_time_stdev: 0.112886
+  # preprocess_time: 0.02628
+  # preprocess_time: 1.00593
+  # preprocess_time_stdev: 0.10835
+  # preprocess_time: 1.65016
+  # preprocess_time_dev: 0.16045
+  # preprocess_time: 1.76354
+  # preprocess_time_dev: 0.24842
+  preprocess_time: 2.266645
+  preprocess_time_stdev: 0.16045
   prefetch_size: 10
 
 train:
-  epochs: 1
+  epochs: 3
   computation_time: 0.789605
   computation_time_stdev: 0.341226

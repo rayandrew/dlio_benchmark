@@ -12,6 +12,7 @@ module load cudnn
 export CC=cc
 export CXX=CC
 source "${VIRTUAL_ENV}/bin/activate"
+echo "VIRTUAL_ENV=${VIRTUAL_ENV}"
 
 # AWS NCCL OFI Plugin settings below
 export NCCL_CROSS_NIC=1

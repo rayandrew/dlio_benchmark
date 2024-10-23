@@ -115,10 +115,11 @@ class TorchDataLoader(BaseDataLoader):
         dataset = TorchDataset(self.format_type, self.dataset_type, self.epoch_number, self.num_samples,
                                self._args.read_threads, self.batch_size)
         sampler = dlio_sampler(self._args.my_rank, self._args.comm_size, self.num_samples, self._args.epochs)
-        if self._args.read_threads >= 1:
-            prefetch_factor = math.ceil(self._args.prefetch_size / self._args.read_threads)
-        else:
-            prefetch_factor = self._args.prefetch_size
+        # TODO: send PR about this
+        # if self._args.read_threads >= 1:
+        #     prefetch_factor = math.ceil(self._args.prefetch_size / self._args.read_threads)
+        # else:
+        prefetch_factor = self._args.prefetch_size
         if prefetch_factor > 0:
             if self._args.my_rank == 0:
                 logging.debug(
@@ -166,7 +167,8 @@ class TorchDataLoader(BaseDataLoader):
         total = self._args.training_steps if self.dataset_type is DatasetType.TRAIN else self._args.eval_steps
         logging.debug(f"{utcnow()} Rank {self._args.my_rank} should read {total} batches")
         step = 1
-        for batch in self._dataset:
+        # TODO: send PR about dlp.iter
+        for batch in dlp.iter(self._dataset, name=self.next.__qualname__):
             dlp.update(step = step)
             step += 1
             yield batch

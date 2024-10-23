@@ -1,0 +1,35 @@
+# SERIAL
+# A LOT OF GAPS IN THE DATA
+
+model: stormer-original
+
+framework: pytorch
+
+workflow:
+  generate_data: True
+  train: False
+  checkpoint: False
+
+dataset:
+  data_folder: /lus/eagle/projects/MDClimSim/rayandrew/dlio-benchmark/data/stormer-ori
+  # data_folder: /local/scratch
+  format: hdf5
+  num_files_train: 2920
+  num_samples_per_file: 1
+  record_length: 1104764644
+  enable_chunking: True
+  chunk_2d_dim: [16619, 33238]
+
+reader:
+  data_loader: pytorch
+  batch_size: 1
+  read_threads: 6
+  file_shuffle: seed
+  preprocess_time: 1.65016
+  preprocess_time_stdev: 0.16045
+  prefetch_size: 10
+
+train:
+  epochs: 3
+  computation_time: 0.789605
+  computation_time_stdev: 0.341226

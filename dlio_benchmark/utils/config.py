@@ -89,6 +89,7 @@ class ConfigArguments:
     prefetch_size: int = 2
     enable_chunking: bool = False
     chunk_size: int = 0
+    chunk_2d_dim: ClassVar[List[int]] = []
     compression: Compression = Compression.NONE
     compression_level: int = 4
     debug: bool = False
@@ -465,6 +466,8 @@ def LoadConfig(args, config):
             args.enable_chunking = config['dataset']['enable_chunking']
         if 'chunk_size' in config['dataset']:
             args.chunk_size = config['dataset']['chunk_size']
+        if 'chunk_2d_dim' in config['dataset']:
+            args.chunk_2d_dim = config['dataset']['chunk_2d_dim']
         if 'compression' in config['dataset']:
             args.compression = config['dataset']['compression']
         if 'compression_level' in config['dataset']:

@@ -37,6 +37,7 @@ class HDF5Generator(DataGenerator):
         super().__init__()
         self.chunk_size = self._args.chunk_size
         self.enable_chunking = self._args.enable_chunking
+        self.chunk_2d_dim = self._args.chunk_2d_dim
 
     @dlp.log    
     def generate(self):
@@ -49,10 +50,13 @@ class HDF5Generator(DataGenerator):
         dim = self.get_dimension(self.total_files_to_generate)
         chunks = None
         if self.enable_chunking:
-            chunk_dimension = int(math.ceil(math.sqrt(self.chunk_size)))
-            if chunk_dimension > self._dimension:
-                chunk_dimension = self._dimension
-            chunks = (1, chunk_dimension, chunk_dimension)
+            if len(self.chunk_2d_dim) != 2:
+                chunk_dimension = int(math.ceil(math.sqrt(self.chunk_size)))
+                if chunk_dimension > self._dimension:
+                    chunk_dimension = self._dimension
+                chunks = (1, chunk_dimension, chunk_dimension)
+            else:
+                chunks = (1, *self.chunk_2d_dim)
         compression = None
         compression_level = None
         if self.compression != Compression.NONE:

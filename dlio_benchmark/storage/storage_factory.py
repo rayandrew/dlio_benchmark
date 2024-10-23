@@ -16,6 +16,7 @@
 """
 from dlio_benchmark.storage.file_storage import FileStorage
 from dlio_benchmark.storage.s3_storage import S3Storage
+from dlio_benchmark.storage.lfs_storage import LFSStorage
 from dlio_benchmark.common.enumerations import StorageType
 from dlio_benchmark.common.error_code import ErrorCodes
 
@@ -26,7 +27,8 @@ class StorageFactory(object):
     @staticmethod
     def get_storage(storage_type, namespace, framework=None):
         if storage_type == StorageType.LOCAL_FS:
-            return FileStorage(namespace, framework)
+            # return FileStorage(namespace, framework)
+            return LFSStorage(namespace, framework)
         elif storage_type == StorageType.S3:
             return S3Storage(namespace, framework)
         else:
