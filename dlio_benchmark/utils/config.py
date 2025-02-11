@@ -21,8 +21,8 @@ import hydra
 import logging
 from time import time
 
-
-from typing import List, ClassVar
+from omegaconf import DictConfig, OmegaConf
+from typing import Any, Dict, List, ClassVar
 
 from dlio_benchmark.common.constants import MODULE_CONFIG
 from dlio_benchmark.common.enumerations import StorageType, FormatType, Shuffle, ReadType, FileAccess, Compression, \
@@ -82,14 +82,17 @@ class ConfigArguments:
     read_threads: int = 1
     dont_use_mmap: bool = False
     computation_threads: int = 1
-    computation_time: float = 0.
-    computation_time_stdev: float = 0.
-    preprocess_time: float = 0.
-    preprocess_time_stdev: float = 0.
+    computation_time: ClassVar[Dict[str, Any]] = {}
+    # computation_time: float = 0.
+    # computation_time_stdev: float = 0.
+    preprocess_time: ClassVar[Dict[str, Any]] = {}
+    # preprocess_time: float = 0.
+    # preprocess_time_stdev: float = 0.
     prefetch_size: int = 2
     enable_chunking: bool = False
     chunk_size: int = 0
-    chunk_2d_dim: ClassVar[List[int]] = []
+    # chunk_2d_dim: ClassVar[List[int]] = []
+    transformed_sample: ClassVar[List[int]] = []
     compression: Compression = Compression.NONE
     compression_level: int = 4
     debug: bool = False
@@ -257,7 +260,11 @@ class ConfigArguments:
         if (self.record_length_resize > 0):
             self.max_dimension = int(math.sqrt(self.record_length_resize))
         if (file_list_train != None and file_list_eval != None):
-            self.resized_image = np.random.randint(255, size=(self.max_dimension, self.max_dimension), dtype=np.uint8)
+            if self.transformed_sample is not None and len(self.transformed_sample) > 0:
+                logging.info(f"Using transformed sample size {self.transformed_sample}")
+                self.resized_image = np.random.randint(255, size=self.transformed_sample, dtype=np.uint8)
+            else:
+                self.resized_image = np.random.randint(255, size=(self.max_dimension, self.max_dimension), dtype=np.uint8)
             self.file_list_train = file_list_train
             self.file_list_eval = file_list_eval
             self.num_files_eval = len(file_list_eval)
@@ -521,9 +528,22 @@ def LoadConfig(args, config):
         if 'transfer_size' in reader:
             args.transfer_size = reader['transfer_size']
         if 'preprocess_time' in reader:
-            args.preprocess_time = reader['preprocess_time']
-        if 'preprocess_time_stdev' in reader:
-            args.preprocess_time_stdev = reader['preprocess_time_stdev']
+            if type(reader['preprocess_time']) is dict:
+                args.preprocess_time = reader['preprocess_time']
+            elif type(reader['preprocess_time']) in [float, int]:
+                args.preprocess_time = {'mean': reader['preprocess_time']}
+            elif type(reader['preprocess_time']) is DictConfig:
+                args.preprocess_time = OmegaConf.to_container(reader['preprocess_time'])
+            else:
+                args.preprocess_time = reader['preprocess_time']
+
+        # if 'preprocess_time_stdev' in reader:
+            # args.preprocess_time_stdev = reader['preprocess_time_stdev']
+        if 'transformed_sample' in reader:
+            args.transformed_sample = reader['transformed_sample']
+        if args.record_length_resize > 0 and len(args.transformed_sample) > 0:
+            logging.warning("record_length_resize and transformed_sample are mutually exclusive. Ignoring record_length_resize.")
+            args.record_length_resize = 0
 
     # training relevant setting
     if 'train' in config:
@@ -534,9 +554,16 @@ def LoadConfig(args, config):
         if 'seed_change_epoch' in config['train']:
             args.seed_change_epoch = config['train']['seed_change_epoch']
         if 'computation_time' in config['train']:
-            args.computation_time = config['train']['computation_time']
-        if 'computation_time_stdev' in config['train']:
-            args.computation_time_stdev = config['train']['computation_time_stdev']
+            if type(config['train']['computation_time']) is dict:
+                args.computation_time = config['train']['computation_time']
+            elif type(config['train']['computation_time']) in [float, int]:
+                args.computation_time = {'mean': config['train']['computation_time']}
+            elif type(config['train']['computation_time']) is DictConfig:
+                args.computation_time = OmegaConf.to_container(config['train']['computation_time'])
+            else:
+                args.computation_time = config['train']['computation_time']
+        # if 'computation_time_stdev' in config['train']:
+            # args.computation_time_stdev = config['train']['computation_time_stdev']
         if 'seed' in config['train']:
             args.seed = config['train']['seed']
 

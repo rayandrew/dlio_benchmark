@@ -27,8 +27,8 @@ class StorageFactory(object):
     @staticmethod
     def get_storage(storage_type, namespace, framework=None):
         if storage_type == StorageType.LOCAL_FS:
-            # return FileStorage(namespace, framework)
-            return LFSStorage(namespace, framework)
+            return FileStorage(namespace, framework)
+            # return LFSStorage(namespace, framework)
         elif storage_type == StorageType.S3:
             return S3Storage(namespace, framework)
         else:

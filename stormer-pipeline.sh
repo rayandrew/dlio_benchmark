@@ -27,18 +27,58 @@ if [[ -v NOOP ]]; then         # to use: `NOOP=1 bash train_llama_alcf.sh`
   set -o noexec                # same as set -n
 fi
 
-export VIRTUAL_ENV="/lus/eagle/projects/MDClimSim/rayandrew/venvs/dlio-benchmark"
+# export VIRTUAL_ENV="/lus/eagle/projects/MDClimSim/rayandrew/venvs/dlio-benchmark"
+export VIRTUAL_ENV="/lus/eagle/projects/MDClimSim/rayandrew/venvs/stormer"
 export IO_PROFILING_ENABLE=1
 export MPICH_GPU_SUPPORT_ENABLED=0
+
+ezpz_get_num_hosts() {
+    hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
+    if [[ -n "${hostfile}" ]]; then
+        nhosts=$(wc -l <"${hostfile}")
+    elif [[ -n "${SLURM_NNODES:-}" ]]; then
+        nhosts=${SLURM_NNODES:-1}
+    else
+        nhosts=1
+    fi
+    if [[ -n "${nhosts}" ]]; then
+        export NHOSTS="${nhosts}"
+    fi
+    echo "${nhosts}"
+}
+
+ezpz_get_num_gpus_per_host() {
+    ngpu_per_host=4
+    export NGPU_PER_HOST="${ngpu_per_host}"
+    echo "${ngpu_per_host}"
+}
+
+exe() { echo "\$ $@" ; "$@" ; }
 
 #####################
 # MAIN PROGRAM LOGIC
 #####################
 main() {
+    if [[ "${PBS_O_WORKDIR}" != "/lus/eagle/projects/MDClimSim/rayandrew/dlio-benchmark" ]]; then
+        PBS_O_WORKDIR="/lus/eagle/projects/MDClimSim/rayandrew/dlio-benchmark"
+    fi
     cd "${PBS_O_WORKDIR}" || exit
+
+
     source ./setup-env.sh
 
     # extract the data
+
+    hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
+    num_hosts=$(ezpz_get_num_hosts "${hf}")
+    num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
+    num_gpus="$((num_hosts * num_gpus_per_host))"
+
+    num_cores_per_host=$(getconf _NPROCESSORS_ONLN)
+    num_cpus_per_host=$((num_cores_per_host / 2))
+    depth=$((num_cpus_per_host / num_gpus_per_host))
+
+    dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
 
     if [ "${IO_PROFILING_ENABLE}" -eq 1 ]; then
 	    echo "IO_PROFILING_ENABLE=${IO_PROFILING_ENABLE}"
@@ -48,9 +88,9 @@ main() {
 		    exit 1
 	    fi
 	    echo "IO_PROFILING_LD_PRELOAD=${IO_PROFILING_LD_PRELOAD}"
-	    mpiexec --verbose --envall -n 4 -ppn 4 --hostfile $PBS_NODEFILE --cpu-bind depth -d 16 --env DFTRACER_ENABLE ${IO_PROFILING_ENABLE} --env DFTRACER_SET_CORE_AFFINITY 1 --env DFTRACER_INC_METADATA 1 --env LD_PRELOAD ${IO_PROFILING_LD_PRELOAD} python3 -m dlio_benchmark.main workload=stormer_a100 ++workload.workflow.generate_data=False ++workload.workflow.train=True # ++workload.output.folder=/local/scratch/output
+	    exe ${dist_launch_cmd} --env DFTRACER_ENABLE ${IO_PROFILING_ENABLE} --env DFTRACER_SET_CORE_AFFINITY 1 --env DFTRACER_INC_METADATA 1 --env LD_PRELOAD ${IO_PROFILING_LD_PRELOAD} --genvall python3 -m dlio_benchmark.main workload=stormer_a100 ++workload.workflow.generate_data=False ++workload.workflow.train=True # ++workload.output.folder=/local/scratch/output
     else
-	    mpiexec --verbose --envall -n 4 -ppn 4 --hostfile $PBS_NODEFILE --cpu-bind depth -d 16 --genvall python3 -m dlio_benchmark.main workload=stormer_a100 ++workload.workflow.generate_data=False # ++workload.workflow.train=True
+	    exe ${dist_launch_cmd} --genvall python3 -m dlio_benchmark.main workload=stormer_a100 ++workload.workflow.generate_data=False # ++workload.workflow.train=True
     fi
 
     #

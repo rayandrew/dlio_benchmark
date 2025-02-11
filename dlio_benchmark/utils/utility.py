@@ -18,7 +18,7 @@
 import os
 from datetime import datetime
 import logging
-from time import time
+from time import sleep, time
 from functools import wraps
 import threading
 import json
@@ -308,4 +308,27 @@ def get_trace_name(output_folder, use_pid=False):
     val = ""
     if use_pid:
         val = f"-{os.getpid()}"
-    return f"{output_folder}/trace-{DLIOMPI.get_instance().rank()}-of-{DLIOMPI.get_instance().size()}{val}.pfw"
+    return f"{output_folder}/trace-{DLIOMPI.get_instance().rank() + 1}-of-{DLIOMPI.get_instance().size()}{val}.pfw"
+
+def sleep_dist(config):
+    sleep_time = 0.0
+    if isinstance(config, dict):
+        if "type" in config:
+            if config["type"] == "normal":
+                sleep_time = np.random.normal(config["mean"], config["stdev"])
+            elif config["type"] == "uniform":
+                sleep_time = np.random.uniform(config["min"], config["max"])
+            elif config["type"] == "gamma":
+                sleep_time = np.random.gamma(config["shape"], config["scale"])
+            elif config["type"] == "exponential":
+                sleep_time = np.random.exponential(config["scale"])
+            elif config["type"] == "poisson":
+                sleep_time = np.random.poisson(config["lam"])
+            else:
+                sleep_time = config["mean"]
+    elif isinstance(config, float):
+        sleep_time = config
+    sleep_time = abs(sleep_time)
+    if sleep_time > 0.0:
+        sleep(sleep_time)
+    return sleep_time

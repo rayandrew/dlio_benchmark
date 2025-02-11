@@ -14,7 +14,6 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-from time import time
 import logging
 import math
 import pickle
@@ -29,7 +28,7 @@ from dlio_benchmark.data_loader.base_data_loader import BaseDataLoader
 from dlio_benchmark.reader.reader_factory import ReaderFactory
 from dlio_benchmark.utils.utility import utcnow, DLIOMPI
 from dlio_benchmark.utils.config import ConfigArguments
-from dlio_benchmark.utils.utility import Profile
+from dlio_benchmark.utils.utility import Profile, PerfTrace
 
 dlp = Profile(MODULE_DATA_LOADER)
 
@@ -50,14 +49,17 @@ class TorchDataset(Dataset):
         self.num_images_read = 0
         self.batch_size = batch_size
         args = ConfigArguments.get_instance()
-        self.serial_args = pickle.dumps(args)
+        self.serial_args = None
+        if args.multiprocessing_context != "fork":
+            self.serial_args = pickle.dumps(args)
         self.dlp_logger = None
         if num_workers == 0:
             self.worker_init(-1)
 
     @dlp.log
     def worker_init(self, worker_id):
-        pickle.loads(self.serial_args)
+        if self.serial_args:
+            pickle.loads(self.serial_args)
         _args = ConfigArguments.get_instance()
         _args.configure_dlio_logging(is_child=True)
         self.dlp_logger = _args.configure_dftracer(is_child=True, use_pid=True)
@@ -81,8 +83,7 @@ class TorchDataset(Dataset):
         step = int(math.ceil(self.num_images_read / self.batch_size))
         logging.debug(f"{utcnow()} Rank {DLIOMPI.get_instance().rank()} reading {image_idx} sample")
         dlp.update(step = step)
-        return self.reader.read_index(image_idx, step)
-
+        return (self.reader.read_index(image_idx, step), )
 
 class dlio_sampler(Sampler):
     def __init__(self, rank, size, num_samples, epochs):
@@ -102,9 +103,9 @@ class dlio_sampler(Sampler):
         return self.num_samples
 
     def __iter__(self):
-        for sample in self.indices:
-            yield sample
-
+        return iter(self.indices)
+        # for sample in self.indices:
+            # yield sample
 
 class TorchDataLoader(BaseDataLoader):
     @dlp.log_init
@@ -115,10 +116,6 @@ class TorchDataLoader(BaseDataLoader):
         dataset = TorchDataset(self.format_type, self.dataset_type, self.epoch_number, self.num_samples,
                                self._args.read_threads, self.batch_size)
         sampler = dlio_sampler(self._args.my_rank, self._args.comm_size, self.num_samples, self._args.epochs)
-        # TODO: send PR about this
-        # if self._args.read_threads >= 1:
-        #     prefetch_factor = math.ceil(self._args.prefetch_size / self._args.read_threads)
-        # else:
         prefetch_factor = self._args.prefetch_size
         if prefetch_factor > 0:
             if self._args.my_rank == 0:
@@ -141,20 +138,20 @@ class TorchDataLoader(BaseDataLoader):
             if 'prefetch_factor' in kwargs:
                 del kwargs['prefetch_factor']
             self._dataset = DataLoader(dataset,
-                                       batch_size=self.batch_size,
+                                       batch_size=self.batch_size if self.batch_size > 1 else None,
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
-                                       pin_memory=True,
-                                       drop_last=True,
+                                       pin_memory=False,
+                                       drop_last=True if self.batch_size > 1 else False,
                                        worker_init_fn=dataset.worker_init, 
                                        **kwargs)
         else: 
             self._dataset = DataLoader(dataset,
-                                       batch_size=self.batch_size,
+                                       batch_size=self.batch_size if self.batch_size > 1 else None,
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
-                                       pin_memory=True,
-                                       drop_last=True,
+                                       pin_memory=False,
+                                       drop_last=True if self.batch_size > 1 else False,
                                        worker_init_fn=dataset.worker_init,
                                        **kwargs)  # 2 is the default value
         logging.debug(f"{utcnow()} Rank {self._args.my_rank} will read {len(self._dataset) * self.batch_size} files")
@@ -167,11 +164,27 @@ class TorchDataLoader(BaseDataLoader):
         total = self._args.training_steps if self.dataset_type is DatasetType.TRAIN else self._args.eval_steps
         logging.debug(f"{utcnow()} Rank {self._args.my_rank} should read {total} batches")
         step = 1
-        # TODO: send PR about dlp.iter
-        for batch in dlp.iter(self._dataset, name=self.next.__qualname__):
+
+        start = PerfTrace.get_instance().get_time()
+
+        arguments = {
+            "step": str(0)
+        }
+
+        # for batch in dlp.iter(self._dataset, name=self.next.__qualname__):
+        for batch in self._dataset:
+            end = PerfTrace.get_instance().get_time()
             dlp.update(step = step)
             step += 1
             yield batch
+            arguments["step"] = f"{step}"
+            PerfTrace.get_instance().enter_event()
+            PerfTrace.get_instance().log_event(name=f"{self.next.__qualname__}.iter", cat=MODULE_DATA_LOADER, start_time=start,
+                                               duration=end - start,
+                                               string_args=arguments)
+            PerfTrace.get_instance().exit_event()
+            start = PerfTrace.get_instance().get_time()
+
         self.epoch_number += 1
         dlp.update(epoch=self.epoch_number)
 

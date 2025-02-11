@@ -17,7 +17,7 @@
 import os
 import math
 import logging
-from time import time, sleep
+from time import time
 import json
 import numpy as np
 
@@ -114,7 +114,7 @@ class DLIOBenchmark(object):
             self.epochs = self.args.epochs
             self.batch_size = self.args.batch_size
             self.computation_time = self.args.computation_time
-            self.computation_time_stdev = self.args.computation_time_stdev
+            # self.computation_time_stdev = self.args.computation_time_stdev
 
             if self.do_profiling:
                 self.profiler = ProfilerFactory().get_profiler(self.args.profiler)
@@ -224,7 +224,7 @@ class DLIOBenchmark(object):
         total = math.floor(self.num_samples * self.num_files_eval / self.batch_size_eval / self.comm_size)
         loader = self.framework.get_loader(DatasetType.VALID)
         t0 = time()
-        for batch in dlp.iter(loader.next()):
+        for batch in loader.next():
             self.stats.eval_batch_loaded(epoch, step, t0)
             eval_time = 0.0
             if self.eval_time > 0:
@@ -268,13 +268,13 @@ class DLIOBenchmark(object):
             if block_step == 1 and block != 1:
                 self.stats.start_block(epoch, block)
             computation_time = self.computation_time
-            if self.computation_time > 0:
+            if (isinstance(self.computation_time, dict) and len(self.computation_time) > 0) or (isinstance(self.computation_time, float) and  self.computation_time > 0):
                 self.framework.trace_object("Train", overall_step, 1)
-                if self.computation_time_stdev > 0:
-                    computation_time = abs(random.normal(self.computation_time, self.computation_time_stdev))
-                else:
-                    computation_time = self.computation_time
-            self.framework.compute(batch, epoch, block_step, computation_time)
+                # if self.computation_time_stdev > 0:
+                #     computation_time = abs(random.normal(self.computation_time, self.computation_time_stdev))
+                # else:
+                #     computation_time = self.computation_time
+            computation_time = self.framework.compute(batch, epoch, block_step, computation_time)
             self.stats.batch_processed(epoch, overall_step, block, t0, computation_time)
             self.comm.barrier()
             if self.do_checkpoint and (
@@ -291,6 +291,7 @@ class DLIOBenchmark(object):
                 block_step += 1
             overall_step += 1
             t0 = time()
+            del batch
         self.comm.barrier()
         if self.do_checkpoint and (self.steps_between_checkpoints < 0) and (epoch == self.next_checkpoint_epoch):
             self.stats.end_block(epoch, block, block_step)

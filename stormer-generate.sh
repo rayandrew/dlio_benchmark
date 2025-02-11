@@ -27,14 +27,14 @@ if [[ -v NOOP ]]; then         # to use: `NOOP=1 bash train_llama_alcf.sh`
   set -o noexec                # same as set -n
 fi
 
-export VIRTUAL_ENV="/lus/eagle/projects/MDClimSim/rayandrew/venvs/dlio-benchmark"
+export VIRTUAL_ENV="/lus/eagle/projects/MDClimSim/rayandrew/venvs/stormer"
 export DFTRACER_ENABLE=0
 
 #####################
 # MAIN PROGRAM LOGIC
 #####################
 main() {
-    cd "${PBS_O_WORKDIR}" || exit
+    cd "/lus/eagle/projects/MDClimSim/rayandrew/dlio-benchmark" || exit
     source ./setup-env.sh
     num_cores=$(nproc --all)
     mpiexec --verbose --envall -n $num_cores -ppn $num_cores --hostfile $PBS_NODEFILE --genvall python3 -m dlio_benchmark.main workload=stormer_a100 # ++workload.workflow.generate_data=True ++workload.workflow.train=False
