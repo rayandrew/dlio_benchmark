@@ -41,7 +41,7 @@ logging.basicConfig(
     # logging's max timestamp resolution is msecs, we will pass in usecs in the message
 )
 
-from dlio_benchmark.main import DLIOBenchmark
+from dlio_benchmark.main import DLIOBenchmark, set_dftracer_initialize, set_dftracer_finalize
 import glob
 
 def init():
@@ -127,9 +127,11 @@ def test_subset() -> None:
         logging.info(f" DLIO training test for subset")
         logging.info("=" * 80)
     with initialize_config_dir(version_base=None, config_dir=config_dir):
+        set_dftracer_finalize(False)
         cfg = compose(config_name='config', overrides=['++workload.workflow.train=False', \
                     '++workload.workflow.generate_data=True'])
         benchmark=run_benchmark(cfg, verify=False)
+        set_dftracer_initialize(False)
         cfg = compose(config_name='config', overrides=['++workload.workflow.train=True', \
                         '++workload.workflow.generate_data=False', \
                             '++workload.dataset.num_files_train=8', \
@@ -224,13 +226,13 @@ def test_iostat_profiling() -> None:
     finalize()
 
 @pytest.mark.timeout(60, method="thread")
-@pytest.mark.parametrize("framework, model_size, optimizers, num_layers, layer_params, type", [("tensorflow", 1024, [1024, 128], 2, [16], "all_ranks"),
-                                                                                         ("pytorch", 1024, [1024, 128], 2, [16], "all_ranks"),
-                                                                                         ("tensorflow", 1024, [1024, 128], 2, [16], "rank_zero"),
-                                                                                         ("pytorch", 1024, [1024, 128], 2, [16], "rank_zero"),
-                                                                                         ("tensorflow", 1024, [128], 1, [], "all_ranks"),
-                                                                                         ("pytorch", 1024, [128], 1, [], "all_ranks")])
-def test_checkpoint_epoch(framework, model_size, optimizers, num_layers, layer_params, type) -> None:
+@pytest.mark.parametrize("framework, model_size, optimizers, num_layers, layer_params, zero_stage", [("tensorflow", 1024, [1024, 128], 2, [16], 0),
+                                                                                         ("pytorch", 1024, [1024, 128], 2, [16], 0),
+                                                                                         ("tensorflow", 1024, [1024, 128], 2, [16], 3),
+                                                                                         ("pytorch", 1024, [1024, 128], 2, [16], 3),
+                                                                                         ("tensorflow", 1024, [128], 1, [16], 0),
+                                                                                         ("pytorch", 1024, [128], 1, [16], 0)])
+def test_checkpoint_epoch(framework, model_size, optimizers, num_layers, layer_params, zero_stage) -> None:
     init()
     clean()
     if comm.rank == 0:
@@ -239,6 +241,8 @@ def test_checkpoint_epoch(framework, model_size, optimizers, num_layers, layer_p
         logging.info(f" DLIO test for checkpointing at the end of epochs")
         logging.info("=" * 80)
     with initialize_config_dir(version_base=None, config_dir=config_dir):
+        epochs = 8
+        epoch_per_ckp = 2
         cfg = compose(config_name='config',
                       overrides=[f'++workload.framework={framework}',
                                  f'++workload.reader.data_loader={framework}',
@@ -246,13 +250,14 @@ def test_checkpoint_epoch(framework, model_size, optimizers, num_layers, layer_p
                                  '++workload.workflow.generate_data=True',
                                  '++workload.train.computation_time=0.01',
                                  '++workload.evaluation.eval_time=0.005',
-                                 '++workload.train.epochs=8', '++workload.workflow.checkpoint=True',
-                                 '++workload.checkpoint.epochs_between_checkpoints=2',
-                                 f'++workload.checkpoint.type={type}',
-                                 f'++workload.checkpoint.model_size={model_size}',
-                                 f'++workload.checkpoint.optimization_groups={optimizers}',
-                                 f'++workload.checkpoint.num_layers={num_layers}',
-                                 f'++workload.checkpoint.layer_parameters={layer_params}'])
+                                 f'++workload.train.epochs={epochs}', '++workload.workflow.checkpoint=True',
+                                 f'++workload.checkpoint.epochs_between_checkpoints={epoch_per_ckp}',
+                                 f'++workload.model.model_size={model_size}',
+                                 f'++workload.model.optimization_groups={optimizers}',
+                                 f'++workload.model.num_layers={num_layers}',
+                                 f'++workload.model.parallelism.zero_stage={zero_stage}',
+                                 f'++workload.model.layer_parameters={layer_params}', 
+                                 f'++workload.model.parallelism.tensor={comm.size}'])
         comm.Barrier()
         if comm.rank == 0:
             shutil.rmtree("./checkpoints", ignore_errors=True)
@@ -260,18 +265,22 @@ def test_checkpoint_epoch(framework, model_size, optimizers, num_layers, layer_p
         comm.Barrier()
         benchmark = run_benchmark(cfg)
         output = pathlib.Path("./checkpoints")
-        load_bin = list(output.glob("*"))
+        load_bin = list(output.glob(f"*/*"))
         n = 0
         if len(layer_params) > 0:
             n = num_layers
-        nranks = 1
-        if type == "all_ranks":
-            nranks = comm.size
+        nranks = comm.size
+        num_model_files = 1
+        num_optimizer_files = 1
+        # We are setting num_layer_files to be one because pipeline parallelism is not used. 
+        num_layer_files = 1
+        files_per_checkpoint = (num_model_files + num_optimizer_files + num_layer_files) * nranks
         if framework == "tensorflow":
-            num_check_files = 8 / 2 * (2 + 2 + 2*n) * nranks + 1
+            file_per_ckp = 2
+            num_check_files = epochs / epoch_per_ckp * (files_per_checkpoint * file_per_ckp + 1)
             assert (len(load_bin) == num_check_files), f"files produced are {len(load_bin)} {num_check_files} {load_bin} "
         if framework == "pytorch":
-            num_check_files = 8 / 2 * (1 + 1 + n) * nranks
+            num_check_files = epochs / epoch_per_ckp * files_per_checkpoint
             assert (len(load_bin) == num_check_files), f"files produced are {len(load_bin)} {num_check_files} {load_bin}"
         comm.Barrier()
         if comm.rank == 0:
@@ -304,11 +313,10 @@ def test_checkpoint_step() -> None:
         comm.Barrier()
         benchmark = run_benchmark(cfg)
         dataset = cfg['workload']['dataset']
-        nstep = dataset.num_files_train * dataset.num_samples_per_file // cfg['workload'][
-            'reader'].batch_size // benchmark.comm_size
-        ncheckpoints = nstep // 2 * 8 * 2
+        nstep = dataset.num_files_train * dataset.num_samples_per_file // cfg['workload']['reader'].batch_size // benchmark.comm_size
+        ncheckpoints = nstep // 2 * 8
         output = pathlib.Path("./checkpoints")
-        load_bin = list(output.glob("*"))
+        load_bin = list(output.glob(f"*/*"))
         assert (len(load_bin) == ncheckpoints)
         clean()
     finalize()
@@ -484,6 +492,51 @@ def test_custom_storage_root_train(fmt, framework) -> None:
                                                        '++workload.reader.read_threads=1'])
         benchmark = run_benchmark(cfg)
     clean(storage_root)
+    finalize()
+
+compute_time_distributions = {
+    "uniform": {"type": "uniform", "min": 1.0, "max": 2.0},
+    "normal": {"type": "normal", "mean": 1.0, "stdev": 1.0},
+    "gamma": {"type": "gamma", "shape": 1.0, "scale": 1.0},
+    "exp": {"type": "exponential", "scale": 1.0},
+    "poisson": {"type": "poisson", "lam": 1.0},
+    "normal_v2": {"mean": 1.0}, # mean, dist: normal
+    "normal_v3": {"mean": 1.0, "stdev": 1.0}, # mean, stdev, dist: normal
+    "normal_v4": 2.0, # mean, dist: normal
+}
+
+@pytest.mark.timeout(60, method="thread")
+@pytest.mark.parametrize("dist", list(compute_time_distributions.keys()))
+def test_computation_time_distribution(request, dist) -> None:
+    init()
+    clean()
+    compute_time_overrides = []
+    dist_val = compute_time_distributions[dist]
+    if isinstance(dist_val, dict):
+        for key, value in dist_val.items():
+            compute_time_overrides.append(f"++workload.train.computation_time.{key}={value}")
+    else:
+        compute_time_overrides.append(f"++workload.train.computation_time={dist_val}")
+
+    if (comm.rank == 0):
+        logging.info("")
+        logging.info("=" * 80)
+        logging.info(f" DLIO test for computation time distribution")
+        logging.info("=" * 80)
+    with initialize_config_dir(version_base=None, config_dir=config_dir):
+        if request.config.is_dftracer_initialized:
+            set_dftracer_initialize(False)
+        else:
+            set_dftracer_finalize(False)
+
+        cfg = compose(config_name='config',
+                      overrides=['++workload.workflow.train=True', \
+                                 '++workload.workflow.generate_data=True', \
+                                 '++workload.train.epochs=4'] + compute_time_overrides)
+        benchmark = run_benchmark(cfg)
+        if not request.config.is_dftracer_initialized:
+            request.config.is_dftracer_initialized = True
+        clean()
     finalize()
 
 if __name__ == '__main__':

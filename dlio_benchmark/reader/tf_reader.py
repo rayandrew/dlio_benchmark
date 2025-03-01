@@ -81,12 +81,12 @@ class TFReader(FormatReader):
 
     @dlp.log
     def next(self):
-        logging.debug(f"{utcnow()} Reading {len(self._file_list)} files thread {self.thread_index} rank {self._args.my_rank}")
+        self.logger.debug(f"{utcnow()} Reading {len(self._file_list)} files thread {self.thread_index} rank {self._args.my_rank}")
         filenames = tf.data.Dataset.list_files(self._file_list, shuffle=False)
         # sharding in the file list if we have enought files. 
         if (len(self._file_list) >= self._args.comm_size):
             filenames = filenames.shard(num_shards=self._args.comm_size, index=self._args.my_rank)
-            logging.debug(f"{utcnow()} shard {filenames} files index {self._args.my_rank} number {self._args.comm_size}")
+            self.logger.debug(f"{utcnow()} shard {filenames} files index {self._args.my_rank} number {self._args.comm_size}")
         
         self._dataset = tf.data.TFRecordDataset(filenames=filenames, buffer_size=self._args.transfer_size,
                                                 num_parallel_reads=self._args.read_threads)
@@ -110,6 +110,7 @@ class TFReader(FormatReader):
         self._dataset = self._dataset.repeat()
         total = math.floor(len(self._file_list)/self._args.comm_size / self.batch_size * self._args.num_samples_per_file)
         return self._dataset.take(total*self._args.epochs).prefetch(buffer_size=self._args.prefetch_size)
+    
     @dlp.log
     def read_index(self, image_idx, step):
         return super().read_index(image_idx, step)

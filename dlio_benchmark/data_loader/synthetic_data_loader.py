@@ -36,6 +36,9 @@ class SyntheticDataLoader(BaseDataLoader):
     @dlp.log_init
     def __init__(self, format_type, dataset_type, epoch):
         super().__init__(format_type, dataset_type, epoch, DataLoaderType.SYNTHETIC)
+        shape = self._args.resized_image.shape
+        self.batch = np.zeros((self.batch_size, shape[0], shape[1]))
+        #self.batch = 1
 
     @dlp.log
     def read(self, init=False):
@@ -44,14 +47,11 @@ class SyntheticDataLoader(BaseDataLoader):
     @dlp.log
     def next(self):
         super().next()
-        logging.debug(f"{utcnow()} Iterating pipelines by {self._args.my_rank} rank ")
+        self.logger.debug(f"{utcnow()} Iterating pipelines by {self._args.my_rank} rank ")
         step = 0
         self.read(True)
         while step < self.num_samples // self.batch_size:
-            batch = []
-            for i in range(self.batch_size):
-                batch.append(self._args.resized_image)
-            yield batch
+            yield self.batch
             step += 1
 
     @dlp.log

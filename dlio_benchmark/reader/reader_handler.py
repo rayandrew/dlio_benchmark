@@ -29,8 +29,7 @@ import math
 import logging
 import glob
 from dlio_benchmark.common.constants import MODULE_DATA_READER
-from dlio_benchmark.utils.utility import sleep_dist
-
+from dlio_benchmark.utils.utility import sleep
 
 dlp = Profile(MODULE_DATA_READER)
 
@@ -40,7 +39,8 @@ class FormatReader(ABC):
     def __init__(self, dataset_type, thread_index):
         self.thread_index = thread_index
         self._args = ConfigArguments.get_instance()
-        logging.debug(
+        self.logger = self._args.logger
+        self.logger.debug(
             f"Loading {self.__class__.__qualname__} reader on thread {self.thread_index} from rank {self._args.my_rank}")
         self.dataset_type = dataset_type
         self.open_file_map = {}
@@ -60,8 +60,9 @@ class FormatReader(ABC):
 
     @dlp.log
     def preprocess(self, a=None):
-        sleep_dist(self._args.preprocess_time)
+        sleep(self._args.preprocess_time)
         return a
+
     @abstractmethod
     def open(self, filename):
         return 
@@ -81,7 +82,7 @@ class FormatReader(ABC):
         image_processed = 0
         self.step = 1
         total_images = len(self.file_map[self.thread_index])
-        logging.debug(f"{utcnow()} Reading {total_images} images thread {self.thread_index} rank {self._args.my_rank}")
+        self.logger.debug(f"{utcnow()} Reading {total_images} images thread {self.thread_index} rank {self._args.my_rank}")
 
         for global_sample_idx, filename, sample_index in self.file_map[self.thread_index]:
             self.image_idx = global_sample_idx
@@ -110,9 +111,9 @@ class FormatReader(ABC):
     def read_index(self, global_sample_idx, step):
         self.step = step
         self.image_idx = global_sample_idx
-        logging.debug(f"{self.global_index_map}")
+        self.logger.debug(f"{self.global_index_map}")
         filename, sample_index = self.global_index_map[global_sample_idx]
-        logging.debug(f"{utcnow()} read_index {filename}, {sample_index}")
+        self.logger.debug(f"{utcnow()} read_index {filename}, {sample_index}")
         FormatReader.read_images += 1
         if self._args.read_type is ReadType.ON_DEMAND or filename not in self.open_file_map or self.open_file_map[filename] is None:
             self.open_file_map[filename] = self.open(filename)

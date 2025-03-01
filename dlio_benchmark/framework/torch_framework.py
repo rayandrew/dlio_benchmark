@@ -31,7 +31,7 @@ from time import time
 
 from dlio_benchmark.reader.reader_factory import ReaderFactory
 from dlio_benchmark.storage.storage_factory import StorageFactory
-from dlio_benchmark.utils.utility import sleep_dist
+from dlio_benchmark.utils.utility import sleep
 
 HANDLED_FUNCTIONS = {}
 dlp = Profile(MODULE_AI_FRAMEWORK)
@@ -51,7 +51,7 @@ def implements(torch_function):
 # Does this annotation mean that torch.mean will be replaced by torch_sleep?
 @implements(torch.mean)
 def torch_sleep(sleep_time):
-    return sleep_dist(sleep_time)
+    return sleep(sleep_time)
 
 
 class TorchFramework(Framework):
@@ -93,8 +93,8 @@ class TorchFramework(Framework):
         return DummyTraceObject(string, step, r)
 
     @dlp.log
-    def compute(self, x, epoch_number, step, computation_time):
-        return torch_sleep(computation_time)
+    def compute(self, batch, epoch_number, step, computation_time):
+        return self.model(batch, computation_time)
 
     @dlp.log
     def get_loader(self, dataset_type=DatasetType.TRAIN):

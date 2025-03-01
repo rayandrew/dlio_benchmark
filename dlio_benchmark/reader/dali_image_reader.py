@@ -16,7 +16,7 @@
 """
 import math
 import logging
-from time import time, sleep
+from time import time
 import numpy as np
 
 import nvidia.dali.fn as fn
@@ -56,7 +56,7 @@ class DaliImageReader(FormatReader):
 
     @dlp.log
     def pipeline(self):
-        logging.debug(
+        self.logger.debug(
             f"{utcnow()} Reading {len(self._file_list)} files rank {self._args.my_rank}")
         random_shuffle = False
         seed = -1

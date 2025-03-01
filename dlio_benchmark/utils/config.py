@@ -21,7 +21,6 @@ import hydra
 import logging
 from time import time
 
-from omegaconf import DictConfig, OmegaConf
 from typing import Any, Dict, List, ClassVar
 
 from dlio_benchmark.common.constants import MODULE_CONFIG
@@ -29,11 +28,12 @@ from dlio_benchmark.common.enumerations import StorageType, FormatType, Shuffle,
     FrameworkType, \
     DataLoaderType, Profiler, DatasetType, DataLoaderSampler, CheckpointLocationType, CheckpointMechanismType
 from dlio_benchmark.utils.utility import DLIOMPI, get_trace_name, utcnow
+from dlio_benchmark.utils.utility import Profile, PerfTrace, DFTRACER_ENABLE, DLIOLogger, OUTPUT_LEVEL
 from dataclasses import dataclass
+from omegaconf import OmegaConf, DictConfig
 import math
 import os
 import numpy as np
-from dlio_benchmark.utils.utility import Profile, PerfTrace, DFTRACER_ENABLE
 
 dlp = Profile(MODULE_CONFIG)
 @dataclass
@@ -65,8 +65,11 @@ class ConfigArguments:
     seed_change_epoch: bool = True
     generate_data: bool = False
     generate_only: bool = False
+    log_level: int = OUTPUT_LEVEL
     data_folder: str = "./data/"
     output_folder: str = None
+    metric_exclude_start_steps: int = 1
+    metric_exclude_end_steps: int = 0
     checkpoint_folder: str = "./checkpoints/"
     log_file: str = "dlio.log"
     file_prefix: str = "img"
@@ -75,6 +78,7 @@ class ConfigArguments:
     profiler: Profiler = Profiler.IOSTAT
     seed: int = 123
     do_checkpoint: bool = False
+    do_train: bool = True
     checkpoint_after_epoch: int = 1
     epochs_between_checkpoints: int = 1
     steps_between_checkpoints: int = -1
@@ -83,34 +87,43 @@ class ConfigArguments:
     dont_use_mmap: bool = False
     computation_threads: int = 1
     computation_time: ClassVar[Dict[str, Any]] = {}
-    # computation_time: float = 0.
-    # computation_time_stdev: float = 0.
     preprocess_time: ClassVar[Dict[str, Any]] = {}
-    # preprocess_time: float = 0.
-    # preprocess_time_stdev: float = 0.
     prefetch_size: int = 2
     enable_chunking: bool = False
     chunk_size: int = 0
-    # chunk_2d_dim: ClassVar[List[int]] = []
+    chunk_dim: ClassVar[List[int]] = []
     transformed_sample: ClassVar[List[int]] = []
     compression: Compression = Compression.NONE
     compression_level: int = 4
-    debug: bool = False
     total_training_steps: int = -1
     do_eval: bool = False
     batch_size_eval: int = 1
     num_files_eval: int = 0
     generation_buffer_size: int = 2 * 1073741824  # 2 GB
-    eval_time: float = 0.0
-    eval_time_stdev: float = 0.0
+    eval_time: ClassVar[Dict[str, Any]] = {}
     eval_after_epoch: int = 1
     epochs_between_evals: int = 1
     checkpoint_type: CheckpointLocationType = CheckpointLocationType.RANK_ZERO
     checkpoint_mechanism: CheckpointMechanismType = CheckpointMechanismType.NONE
+    model_datatype: str = "fp16"
+    optimizer_datatype: str = "fp32"
+    checkpoint_fsync: bool = False
+    checkpoint_only: bool = False
+    checkpoint_load_rank_shift: int = 0
+    checkpoint_recovery_after_steps: int = -1
+    time_between_checkpoints: float = -1
+    num_checkpoints: int = -1
     model_size: int = 10240
+    model_type: str = None
+    vocab_size: int = 32000
+    hidden_size: int = 2048
+    num_attention_heads: int = 32
+    num_kv_heads: int = 8
+    ffn_hidden_size: int = 8192
+    zero_stage: int = 0
     optimization_groups: ClassVar[List[int]] = []
-    num_layers: int = 1
-    layer_parameters: ClassVar[List[int]] = [17371, 24740228]
+    num_layers: int = -1
+    layer_parameters: ClassVar[List[int]] = []
     tensor_parallelism: int = 1
     pipeline_parallelism: int = 1
     data_loader: DataLoaderType = DataLoaderType.TENSORFLOW.value
@@ -122,6 +135,7 @@ class ConfigArguments:
     data_loader_sampler: DataLoaderSampler = None
     reader_classname: str = None
     multiprocessing_context: str = "fork"
+    pin_memory: bool = True
 
     # derived fields
     required_samples: int = 1
@@ -153,10 +167,12 @@ class ConfigArguments:
         else:
             self.comm_size = DLIOMPI.get_instance().size()
             self.my_rank = DLIOMPI.get_instance().rank()
+            self.logger = DLIOLogger.get_instance()
             ConfigArguments.__instance = self
 
     def __setstate__(self, state):
         self.__dict__.update(state)
+        DLIOLogger.reset()
         DLIOMPI.reset()  # in 'fork' case, clear parent's DLIOMPI
         DLIOMPI.get_instance().set_parent_values(self.my_rank, self.comm_size)
         ConfigArguments.__instance = self
@@ -169,19 +185,38 @@ class ConfigArguments:
         return ConfigArguments.__instance
 
     def configure_dlio_logging(self, is_child=False):
+        global DLIOLogger
         # with "multiprocessing_context=fork" the log file remains open in the child process
         if is_child and self.multiprocessing_context == "fork":
             return
         # Configure the logging library
-        log_level = logging.DEBUG if self.debug else logging.INFO
+        log_format_verbose = '[%(levelname)s] %(message)s [%(pathname)s:%(lineno)d]'
+        log_format_simple = '[%(levelname)s] %(message)s'
+        # Set logging format to be simple only when debug_level <= INFO
+        log_format = log_format_simple
+        if 'DLIO_LOG_LEVEL' in os.environ:
+            log_level_str = os.environ["DLIO_LOG_LEVEL"]
+        else:
+            log_level_str = "warning"
+        if log_level_str in ["info", "INFO"]:
+            log_level = logging.INFO
+        elif log_level_str in ["warning", "warn", "WARNING", "WARN"]:
+            log_level = logging.WARNING
+        elif log_level_str in ["error", "ERROR"]:
+            log_level = logging.ERROR
+        elif log_level_str in ["critical", "CRITICAL"]:
+            log_level = logging.CRITICAL
+        elif log_level_str in ["DEBUG", "debug"]:
+            log_format = log_format_verbose
+            log_level = logging.DEBUG
         logging.basicConfig(
+            force = True,
             level=log_level,
-            force=True,
             handlers=[
                 logging.FileHandler(self.logfile_path, mode="a", encoding='utf-8'),
                 logging.StreamHandler()
             ],
-            format='[%(levelname)s] %(message)s [%(pathname)s:%(lineno)d]'
+            format = log_format
             # logging's max timestamp resolution is msecs, we will pass in usecs in the message
         )
 
@@ -193,7 +228,7 @@ class ConfigArguments:
         if DFTRACER_ENABLE:
             dlp_trace = get_trace_name(self.output_folder, use_pid)
             if DLIOMPI.get_instance().rank() == 0:
-                logging.info(f"{utcnow()} Profiling DLIO {dlp_trace}")
+                self.logger.info(f"{utcnow()} Profiling DLIO {dlp_trace}")
             return PerfTrace.initialize_log(logfile=dlp_trace,
                                                    data_dir=f"{os.path.abspath(self.data_folder)}:"
                                                             f"{self.data_folder}:./{self.data_folder}:"
@@ -227,21 +262,23 @@ class ConfigArguments:
             raise Exception(
                 f"For custom data loaders workload.reader.data_loader_sampler needs to be defined as iter or index.")
         if self.read_threads > 1:
-            import psutil
-            p = psutil.Process()
-            cores_available = len(p.cpu_affinity())
-            if cores_available < self.read_threads:
-                logging.warning(
-                    f"Running DLIO with {self.read_threads} threads for I/O but core available {cores_available} "
-                    f"are insufficient and can lead to lower performance.")
-        if self.num_layers % self.pipeline_parallelism != 0:
+            import platform
+            if platform.system() in ["Linux", "Windows"]:
+                import psutil
+                p = psutil.Process()
+                cores_available = len(p.cpu_affinity())
+                if cores_available < self.read_threads:
+                    self.logger.warning(
+                        f"Running DLIO with {self.read_threads} threads for I/O but core available {cores_available} "
+                        f"are insufficient and can lead to lower performance.")
+        if self.num_layers > 0 and self.num_layers < self.pipeline_parallelism:
             raise Exception(
-                f"Expected checkpoint.num_layers {self.num_layers} should be multiple of "
-                f"checkpoint.pipeline_parallelism {self.pipeline_parallelism}.")
-        if self.num_layers % self.tensor_parallelism != 0:
-            raise Exception(
-                f"Expected checkpoint.num_layers {self.num_layers} should be multiple of "
-                f"checkpoint.tensor_parallelism {self.tensor_parallelism}.")
+                f"Expected model.num_layers {self.num_layers} should be larger than "
+                f"model.parallelism.pipeline {self.pipeline_parallelism}.")
+        if self.pipeline_parallelism > 1 and self.zero_stage == 3:
+            raise Exception(f"ZeRO stage {self.zero_stage} is not compatible with pipeline parallelism.")
+        if self.comm_size % (self.pipeline_parallelism * self.tensor_parallelism) != 0:
+            raise Exception(f"Number of processes {self.comm_size} is not a multiple of model parallelism size: {self.pipeline_parallelism * self.tensor_parallelism}")
 
     @staticmethod
     def reset():
@@ -290,7 +327,7 @@ class ConfigArguments:
             for class_name, obj in inspect.getmembers(module):
                 if class_name == classname and issubclass(obj, BaseDataLoader):
                     if DLIOMPI.get_instance().rank() == 0:
-                        logging.info(f"Discovered custom data loader {class_name}")
+                        self.logger.info(f"Discovered custom data loader {class_name}")
                     self.data_loader_class = obj
                     break
         if self.checkpoint_mechanism_classname is not None:
@@ -300,7 +337,7 @@ class ConfigArguments:
             for class_name, obj in inspect.getmembers(module):
                 if class_name == classname and issubclass(obj, BaseCheckpointing):
                     if DLIOMPI.get_instance().rank() == 0:
-                        logging.info(f"Discovered custom checkpointing mechanism {class_name}")
+                        self.logger.info(f"Discovered custom checkpointing mechanism {class_name}")
                     self.checkpoint_mechanism_class = obj
                     break
         if self.reader_classname is not None:
@@ -310,7 +347,7 @@ class ConfigArguments:
             for class_name, obj in inspect.getmembers(module):
                 if class_name == classname and issubclass(obj, FormatReader):
                     if DLIOMPI.get_instance().rank() == 0:
-                        logging.info(f"Discovered custom data reader {class_name}")
+                        self.logger.info(f"Discovered custom data reader {class_name}")
                     self.reader_class = obj
                     break
         self.train_file_map = {self.my_rank : {}}
@@ -327,7 +364,7 @@ class ConfigArguments:
 
     @dlp.log
     def build_sample_map_iter(self, file_list, total_samples, epoch_number):
-        logging.debug(f"ranks {self.comm_size} threads {self.read_threads} tensors")
+        self.logger.debug(f"ranks {self.comm_size} threads {self.read_threads} tensors")
         
         num_files = len(file_list)
         samples_sum = 0
@@ -343,7 +380,7 @@ class ConfigArguments:
             if end_sample_index > total_samples - 1:
                 end_sample_index = total_samples - 1
             sample_list = np.arange(start_sample_index, end_sample_index + 1)
-            logging.debug(f"{self.my_rank} {start_sample_index} {end_sample_index}")
+            self.logger.debug(f"{self.my_rank} {start_sample_index} {end_sample_index}")
             if self.sample_shuffle is not Shuffle.OFF:
                 if self.seed_change_epoch:
                     np.random.seed(self.seed + epoch_number)
@@ -381,7 +418,7 @@ class ConfigArguments:
             end_sample = (self.my_rank + 1) * samples_per_proc - 1
             if end_sample > total_samples - 1:
                 end_sample = total_samples - 1
-            logging.debug(f"{self.my_rank} {start_sample} {end_sample}")
+            self.logger.debug(f"my_rank: {self.my_rank}, start_sample: {start_sample}, end_sample: {end_sample}")
             sample_list = np.arange(start_sample, end_sample + 1)
             if self.sample_shuffle is not Shuffle.OFF:
                 if self.seed_change_epoch:
@@ -420,7 +457,7 @@ class ConfigArguments:
         global_train_sample_sum = DLIOMPI.get_instance().reduce(local_train_sample_sum)
         global_eval_sample_sum = DLIOMPI.get_instance().reduce(local_eval_sample_sum)        
         if self.my_rank == 0:
-            logging.info(f"total sample: train {global_train_sample_sum} eval {global_eval_sample_sum}")
+            self.logger.info(f"{utcnow()} Total number of samples: train {global_train_sample_sum}, eval {global_eval_sample_sum}")
             if self.train_sample_index_sum != global_train_sample_sum:
                 raise Exception(f"Sharding of train samples are missing samples got {global_train_sample_sum} but expected {self.train_sample_index_sum}")
             
@@ -433,12 +470,6 @@ def LoadConfig(args, config):
     '''
     if 'framework' in config:
         args.framework = FrameworkType(config['framework'])
-    if 'model' in config:
-        ''' 
-        most of the time, this won't change the benchmark. But in future we might use 
-        as a way to do model specific setting. 
-        '''
-        args.model = config['model']
 
     if 'storage' in config:
         if 'storage_type' in config['storage']:
@@ -448,12 +479,12 @@ def LoadConfig(args, config):
 
     # dataset related settings
     if 'dataset' in config:
-        if 'record_length' in config['dataset']:
-            args.record_length = config['dataset']['record_length']
-        if 'record_length_stdev' in config['dataset']:
-            args.record_length_stdev = config['dataset']['record_length_stdev']
-        if 'record_length_resize' in config['dataset']:
-            args.record_length_resize = config['dataset']['record_length_resize']
+        if 'record_length_bytes' in config['dataset']:
+            args.record_length = config['dataset']['record_length_bytes']
+        if 'record_length_byte_stdev' in config['dataset']:
+            args.record_length_stdev = config['dataset']['record_length_bytes_stdev']
+        if 'record_length_bytes_resize' in config['dataset']:
+            args.record_length_resize = config['dataset']['record_length_bytes_resize']
         if 'num_files_train' in config['dataset']:
             args.num_files_train = config['dataset']['num_files_train']
         if 'num_files_eval' in config['dataset']:
@@ -473,8 +504,8 @@ def LoadConfig(args, config):
             args.enable_chunking = config['dataset']['enable_chunking']
         if 'chunk_size' in config['dataset']:
             args.chunk_size = config['dataset']['chunk_size']
-        if 'chunk_2d_dim' in config['dataset']:
-            args.chunk_2d_dim = config['dataset']['chunk_2d_dim']
+        if 'chunk_dim' in config['dataset']:
+            args.chunk_dim = config['dataset']['chunk_dim']
         if 'compression' in config['dataset']:
             args.compression = config['dataset']['compression']
         if 'compression_level' in config['dataset']:
@@ -527,23 +558,23 @@ def LoadConfig(args, config):
             args.read_type = reader['read_type']
         if 'transfer_size' in reader:
             args.transfer_size = reader['transfer_size']
+        
+        args.preprocess_time = {}
         if 'preprocess_time' in reader:
-            if type(reader['preprocess_time']) is dict:
-                args.preprocess_time = reader['preprocess_time']
-            elif type(reader['preprocess_time']) in [float, int]:
-                args.preprocess_time = {'mean': reader['preprocess_time']}
-            elif type(reader['preprocess_time']) is DictConfig:
-                args.preprocess_time = OmegaConf.to_container(reader['preprocess_time'])
+            preprocess_time = {}
+            if isinstance(reader['preprocess_time'], dict):
+                preprocess_time = reader['preprocess_time']
+            elif isinstance(reader['preprocess_time'], (int, float)):
+                preprocess_time["mean"] = reader['preprocess_time']
+            elif isinstance(reader['preprocess_time'], DictConfig):
+                preprocess_time = OmegaConf.to_container(reader['preprocess_time'])
             else:
                 args.preprocess_time = reader['preprocess_time']
-
-        # if 'preprocess_time_stdev' in reader:
-            # args.preprocess_time_stdev = reader['preprocess_time_stdev']
-        if 'transformed_sample' in reader:
-            args.transformed_sample = reader['transformed_sample']
-        if args.record_length_resize > 0 and len(args.transformed_sample) > 0:
-            logging.warning("record_length_resize and transformed_sample are mutually exclusive. Ignoring record_length_resize.")
-            args.record_length_resize = 0
+            args.preprocess_time = preprocess_time if preprocess_time is not None else {}
+        if 'preprocess_time_stdev' in reader:
+            args.preprocess_time["stdev"] = reader['preprocess_time_stdev']
+        if 'pin_memory' in reader:
+            args.pin_memory = reader['pin_memory']
 
     # training relevant setting
     if 'train' in config:
@@ -553,25 +584,39 @@ def LoadConfig(args, config):
             args.total_training_steps = config['train']['total_training_steps']
         if 'seed_change_epoch' in config['train']:
             args.seed_change_epoch = config['train']['seed_change_epoch']
+        args.computation_time = {}
         if 'computation_time' in config['train']:
-            if type(config['train']['computation_time']) is dict:
-                args.computation_time = config['train']['computation_time']
-            elif type(config['train']['computation_time']) in [float, int]:
-                args.computation_time = {'mean': config['train']['computation_time']}
-            elif type(config['train']['computation_time']) is DictConfig:
-                args.computation_time = OmegaConf.to_container(config['train']['computation_time'])
+            computation_time = {}
+            if isinstance(config['train']['computation_time'], dict):
+                computation_time = config['train']['computation_time']
+            elif isinstance(config['train']['computation_time'], (int, float)):
+                computation_time["mean"] = config['train']['computation_time']
+            elif isinstance(config['train']['computation_time'], DictConfig):
+                computation_time = OmegaConf.to_container(config['train']['computation_time'])
             else:
                 args.computation_time = config['train']['computation_time']
-        # if 'computation_time_stdev' in config['train']:
-            # args.computation_time_stdev = config['train']['computation_time_stdev']
+            args.computation_time = computation_time if computation_time is not None else {}
+        if 'computation_time_stdev' in config['train']:
+            args.computation_time["stdev"] = config['train']['computation_time_stdev']
         if 'seed' in config['train']:
             args.seed = config['train']['seed']
 
     if 'evaluation' in config:
+        args.eval_time = {}
         if 'eval_time' in config['evaluation']:
-            args.eval_time = config['evaluation']['eval_time']
+            eval_time = {}
+            if isinstance(config['evaluation']['eval_time'], dict):
+                eval_time = config['evaluation']['eval_time']
+            elif isinstance(config['evaluation']['eval_time'], (int, float)):
+                eval_time["mean"] = config['evaluation']['eval_time']
+            elif isinstance(config['evaluation']['eval_time'], DictConfig):
+                eval_time = OmegaConf.to_container(config['evaluation']['eval_time'])
+            else:
+                args.eval_time = config['evaluation']['eval_time']
+            args.eval_time = eval_time if eval_time is not None else {}
+                
         if 'eval_time_stdev' in config['evaluation']:
-            args.eval_time_stdev = config['evaluation']['eval_time_stdev']
+            args.eval_time["stdev"] = config['evaluation']['eval_time_stdev']
         if 'eval_after_epoch' in config['evaluation']:
             args.eval_after_epoch = config['evaluation']['eval_after_epoch']
         if 'epochs_between_evals' in config['evaluation']:
@@ -591,23 +636,65 @@ def LoadConfig(args, config):
             args.checkpoint_type = CheckpointLocationType(config['checkpoint']['type'])
         if 'checkpoint_mechanism_classname' in config['checkpoint']:
             args.checkpoint_mechanism_classname = config['checkpoint']['checkpoint_mechanism_classname']
-        if 'model_size' in config['checkpoint']:
-            args.model_size = config['checkpoint']['model_size']
-        if 'optimization_groups' in config['checkpoint']:
-            args.optimization_groups = config['checkpoint']['optimization_groups']
-        if 'num_layers' in config['checkpoint']:
-            args.num_layers = config['checkpoint']['num_layers']
-        if 'layer_parameters' in config['checkpoint']:
-            args.layer_parameters = config['checkpoint']['layer_parameters']
-        if 'tensor_parallelism' in config['checkpoint']:
-            args.tensor_parallelism = config['checkpoint']['tensor_parallelism']
-        if 'pipeline_parallelism' in config['checkpoint']:
-            args.pipeline_parallelism = config['checkpoint']['pipeline_parallelism']
+        if 'fsync' in config['checkpoint']:
+            args.checkpoint_sync = config['checkpoint']['fsync']
+        if 'time_between_checkpoints' in config['checkpoint']:
+            args.time_between_checkpoints = config['checkpoint']['time_between_checkpoints']
+        if 'num_checkpoints' in config['checkpoint']:
+            args.num_checkpoints = config['checkpoint']['num_checkpoints']
+        if 'load_rank_shift' in config['checkpoint']:
+            args.checkpoint_load_rank_shift = config['checkpoint']['load_rank_shift']
+        if 'recovery_after_steps' in config['checkpoint']:
+            args.checkpoint_recovery_after_steps = config['checkpoint']['recovery_after_steps']
+
+    if 'model' in config:
+        if 'name' in config['model']:
+            args.model = config['model']['name']
+        if 'type' in config['model']:
+            args.model_type = config['model']['type']
+        if 'model_size_bytes' in config['model']:
+            args.model_size = config['model']['model_size_bytes']
+        if 'optimization_groups' in config['model']:
+            args.optimization_groups = config['model']['optimization_groups']
+        if 'num_layers' in config['model']:
+            args.num_layers = config['model']['num_layers']
+        if 'layer_parameters' in config['model']:
+            args.layer_parameters = config['model']['layer_parameters']
+        if 'model_datatype' in config['model']:
+            args.model_datatype = config['model']['model_datatype']
+        if 'optimizer_datatype' in config['model']:
+            args.optimizer_datatype = config['model']['optimizer_datatype']
+
+        if 'parallelism' in config['model']:
+            if 'tensor' in config['model']['parallelism']:
+                args.tensor_parallelism = config['model']['parallelism']['tensor']
+            if 'pipeline' in config['model']['parallelism']:
+                args.pipeline_parallelism = config['model']['parallelism']['pipeline']
+            if 'zero_stage' in config['model']['parallelism']:
+                args.zero_stage = config['model']['parallelism']['zero_stage']
+
+        if 'transformer' in config['model']:
+            if 'vocab_size' in config['model']['transformer']:
+                args.vocab_size = config['model']['transformer']['vocab_size']
+            if 'hidden_size' in config['model']['transformer']:
+                args.hidden_size = config['model']['transformer']['hidden_size']
+            if 'ffn_hidden_size' in config['model']['transformer']:
+                args.ffn_hidden_size = config['model']['transformer']['ffn_hidden_size']
+            if 'num_attention_heads' in config['model']['transformer']:
+                args.num_attention_heads = config['model']['transformer']['num_attention_heads']
+            if 'num_kv_heads' in config['model']['transformer']:
+                args.num_kv_heads = config['model']['transformer']['num_kv_heads']
+            
     if 'output' in config:
         if 'folder' in config['output']:
             args.output_folder = config['output']['folder']
         if 'log_file' in config['output']:
             args.log_file = config['output']['log_file']
+        if 'metric' in config['output']:
+            if 'exclude_start_steps' in config['output']['metric']:
+                args.metric_exclude_start_steps = int(config['output']['metric']['exclude_start_steps'])
+            if 'exclude_end_steps' in config['output']['metric']:
+                args.metric_exclude_end_steps = int(config['output']['metric']['exclude_end_steps'])
 
     if args.output_folder is None:
         try:
@@ -618,20 +705,26 @@ def LoadConfig(args, config):
     args.logfile_path = os.path.join(args.output_folder, args.log_file)
 
     if 'workflow' in config:
+        if 'train' in config['workflow']:
+            args.do_train = config['workflow']['train']
         if 'generate_data' in config['workflow']:
             args.generate_data = config['workflow']['generate_data']
         if not (('train' in config['workflow']) and config['workflow']['train']):
             args.generate_only = True
         else:
             args.generate_only = False
-        if 'debug' in config['workflow']:
-            args.debug = config['workflow']['debug']
         if 'evaluation' in config['workflow']:
             args.do_eval = config['workflow']['evaluation']
         if 'checkpoint' in config['workflow']:
             args.do_checkpoint = config['workflow']['checkpoint']
         if 'profiling' in config['workflow']:
             args.do_profiling = config['workflow']['profiling']
+    
+    if not args.do_train:
+        if args.generate_data:
+            args.generate_only = True
+        if args.do_checkpoint:
+            args.checkpoint_only = True
 
     if 'profiling' in config:
         if 'profiler' in config['profiling']:
