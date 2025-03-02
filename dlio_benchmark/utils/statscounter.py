@@ -392,7 +392,8 @@ class StatsCounter(object):
         else:
             self.output[epoch]['proc'] = [duration]
             self.output[epoch]['compute']=[self.computation_time]
-        self.logger.info(f"{utcnow()} Rank {self.my_rank} step {step} processed {self.batch_size} samples in {duration:.4f}s)")
+        if self.my_rank == 0 and step % 100 == 0:
+            self.logger.info(f"{utcnow()} Rank {self.my_rank} step {step} processed {self.batch_size} samples in {duration:.4f}s)")
 
     def compute_metrics_train(self, epoch, block):
         key = f"block{block}"
