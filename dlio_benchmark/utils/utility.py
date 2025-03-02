@@ -334,7 +334,7 @@ def get_trace_name(output_folder, use_pid=False):
     if use_pid:
         val = f"-{os.getpid()}"
     return f"{output_folder}/trace-{DLIOMPI.get_instance().rank()}-of-{DLIOMPI.get_instance().size()}{val}.pfw"
-        
+
 def sleep(config):
     sleep_time = 0.0
     if isinstance(config, dict) and len(config) > 0:
@@ -349,11 +349,15 @@ def sleep(config):
                 sleep_time = np.random.exponential(config["scale"])
             elif config["type"] == "poisson":
                 sleep_time = np.random.poisson(config["lam"])
-            else:
-                sleep_time = config["mean"]
-    elif isinstance(config, float):
+        else:
+            if "mean" in config:
+                if "stdev" in config:
+                    sleep_time = np.random.normal(config["mean"], config["stdev"])
+                else:
+                    sleep_time = config["mean"]
+    elif isinstance(config, (int, float)):
         sleep_time = config
     sleep_time = abs(sleep_time)
     if sleep_time > 0.0:
-        sleep(sleep_time)
+        base_sleep(sleep_time)
     return sleep_time
