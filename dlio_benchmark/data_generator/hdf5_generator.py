@@ -50,7 +50,7 @@ class HDF5Generator(DataGenerator):
         dim = self.get_dimension(self.total_files_to_generate)
         chunks = None
         if self.enable_chunking:
-            if len(self.chunk_2d_dim) != 2:
+            if len(self.chunk_dim) != 2:
                 chunk_dimension = int(math.ceil(math.sqrt(self.chunk_size)))
                 if chunk_dimension > self._dimension:
                     chunk_dimension = self._dimension
