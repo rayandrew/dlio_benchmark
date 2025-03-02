@@ -97,7 +97,6 @@ class dlio_sampler(Sampler):
             end_sample = num_samples - 1
         self.indices = list(range(start_sample, end_sample + 1))
 
-
     def __len__(self):
         return self.num_samples
 
@@ -137,21 +136,25 @@ class TorchDataLoader(BaseDataLoader):
             if 'prefetch_factor' in kwargs:
                 del kwargs['prefetch_factor']
             self._dataset = DataLoader(dataset,
-                                       batch_size=self.batch_size if self.batch_size > 1 else None,
+                                       batch_size=self.batch_size,
+                                       # batch_size=self.batch_size if self.batch_size > 1 else None,
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
-                                       drop_last=True,
+                                       drop_last=False,
+                                       # drop_last=True,
                                        # drop_last=True if self.batch_size > 1 else False,
                                        worker_init_fn=dataset.worker_init, 
                                        **kwargs)
         else: 
             self._dataset = DataLoader(dataset,
-                                       batch_size=self.batch_size if self.batch_size > 1 else None,
+                                       batch_size=self.batch_size,
+                                       # batch_size=self.batch_size if self.batch_size > 1 else None,
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
-                                       drop_last=True,
+                                       drop_last=False,
+                                       # drop_last=True,
                                        # drop_last=True if self.batch_size > 1 else False,
                                        worker_init_fn=dataset.worker_init,
                                        **kwargs)  # 2 is the default value
@@ -171,14 +174,6 @@ class TorchDataLoader(BaseDataLoader):
             dlp.update(step = step)
             step += 1
             yield batch
-            arguments["step"] = f"{step}"
-            PerfTrace.get_instance().enter_event()
-            PerfTrace.get_instance().log_event(name=f"{self.next.__qualname__}.iter", cat=MODULE_DATA_LOADER, start_time=start,
-                                               duration=end - start,
-                                               string_args=arguments)
-            PerfTrace.get_instance().exit_event()
-            start = PerfTrace.get_instance().get_time()
-
         self.epoch_number += 1
         dlp.update(epoch=self.epoch_number)
 
