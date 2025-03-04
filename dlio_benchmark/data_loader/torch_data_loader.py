@@ -130,30 +130,42 @@ class TorchDataLoader(BaseDataLoader):
         else:
             kwargs={'multiprocessing_context':self._args.multiprocessing_context,
                     'prefetch_factor': prefetch_factor}
-            if torch.__version__ != '1.3.1':       
-                kwargs['persistent_workers'] = True
+            # if torch.__version__ != '1.3.1':       
+            #     kwargs['persistent_workers'] = True
+        
+        batch_size = self.batch_size
+        if batch_size == 1 and self._args.disable_collation:
+            batch_size = None
+
+        if batch_size > 1 and self._args.disable_collation:
+            self.logger.warning(f"Cannot disable collation since batch_size is {batch_size}")
+
         if torch.__version__ == '1.3.1':
             if 'prefetch_factor' in kwargs:
                 del kwargs['prefetch_factor']
             self._dataset = DataLoader(dataset,
-                                       batch_size=self.batch_size,
+                                       # batch_size=self.batch_size,
+                                       batch_size=batch_size,
                                        # batch_size=self.batch_size if self.batch_size > 1 else None,
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
                                        drop_last=False,
+                                       persistent_workers=self._args.persistent_workers,
                                        # drop_last=True,
                                        # drop_last=True if self.batch_size > 1 else False,
                                        worker_init_fn=dataset.worker_init, 
                                        **kwargs)
         else: 
             self._dataset = DataLoader(dataset,
-                                       batch_size=self.batch_size,
+                                       batch_size=batch_size,
+                                       # batch_size=self.batch_size,
                                        # batch_size=self.batch_size if self.batch_size > 1 else None,
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
                                        drop_last=False,
+                                       persistent_workers=self._args.persistent_workers,
                                        # drop_last=True,
                                        # drop_last=True if self.batch_size > 1 else False,
                                        worker_init_fn=dataset.worker_init,

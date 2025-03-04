@@ -136,6 +136,8 @@ class ConfigArguments:
     reader_classname: str = None
     multiprocessing_context: str = "fork"
     pin_memory: bool = True
+    persistent_workers: bool = False
+    disable_collation: bool = False
 
     # derived fields
     required_samples: int = 1
@@ -575,6 +577,11 @@ def LoadConfig(args, config):
             args.preprocess_time["stdev"] = reader['preprocess_time_stdev']
         if 'pin_memory' in reader:
             args.pin_memory = reader['pin_memory']
+        if 'persistent_workers' in reader:
+            args.persistent_workers = reader['persistent_workers']
+        if 'disable_collation' in reader:
+            args.disable_collation = reader['disable_collation']
+
 
     # training relevant setting
     if 'train' in config:
