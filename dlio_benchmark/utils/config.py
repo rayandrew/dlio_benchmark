@@ -17,6 +17,7 @@
 import importlib
 import inspect
 import hydra
+import sys
 
 import logging
 from time import time
@@ -415,13 +416,13 @@ class ConfigArguments:
         samples_sum = 0
         if num_files > 0:
             end_sample = total_samples - 1
-            samples_per_proc = int(math.ceil(total_samples/self.comm_size)) 
+            samples_per_proc = int(math.floor(total_samples/self.comm_size))
             start_sample = self.my_rank * samples_per_proc
             end_sample = (self.my_rank + 1) * samples_per_proc - 1
             if end_sample > total_samples - 1:
                 end_sample = total_samples - 1
-            self.logger.debug(f"my_rank: {self.my_rank}, start_sample: {start_sample}, end_sample: {end_sample}")
             sample_list = np.arange(start_sample, end_sample + 1)
+            self.logger.debug(f"my_rank: {self.my_rank}, start_sample: {start_sample}, end_sample: {end_sample}, len sample_list: {len(sample_list)}")
             if self.sample_shuffle is not Shuffle.OFF:
                 if self.seed_change_epoch:
                     np.random.seed(self.seed + epoch_number)
@@ -430,7 +431,7 @@ class ConfigArguments:
                 np.random.shuffle(sample_list)
             for sample_index in range(end_sample - start_sample + 1):
                 global_sample_index = sample_list[sample_index]
-                samples_sum += global_sample_index
+                samples_sum += global_sample_index + 1
                 file_index = int(math.floor(global_sample_index/self.num_samples_per_file))
                 abs_path = os.path.abspath(file_list[file_index])
                 sample_index = global_sample_index % self.num_samples_per_file
@@ -459,8 +460,9 @@ class ConfigArguments:
         global_train_sample_sum = DLIOMPI.get_instance().reduce(local_train_sample_sum)
         global_eval_sample_sum = DLIOMPI.get_instance().reduce(local_eval_sample_sum)        
         if self.my_rank == 0:
-            self.logger.info(f"{utcnow()} Total number of samples: train {global_train_sample_sum}, eval {global_eval_sample_sum}")
+            self.logger.output(f"{utcnow()} Total number of samples: train {global_train_sample_sum}, eval {global_eval_sample_sum}")
             if self.train_sample_index_sum != global_train_sample_sum:
+                # self.logger.debug(f"Something wrong here, global_train_sample_sum={global_train_sample_sum}, local_train_sample_sum={local_train_sample_sum}, total_samples_train={self.total_samples_train}, expected_train_sample_index_sum={self.train_sample_index_sum}...")
                 raise Exception(f"Sharding of train samples are missing samples got {global_train_sample_sum} but expected {self.train_sample_index_sum}")
             
             if self.eval_sample_index_sum != global_eval_sample_sum:

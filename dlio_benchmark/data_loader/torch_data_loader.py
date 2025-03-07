@@ -90,7 +90,7 @@ class dlio_sampler(Sampler):
         self.rank = rank
         self.num_samples = num_samples
         self.epochs = epochs
-        samples_per_proc = int(math.ceil(num_samples/size)) 
+        samples_per_proc = int(math.floor(num_samples/size))
         start_sample = self.rank * samples_per_proc
         end_sample = (self.rank + 1) * samples_per_proc - 1
         if end_sample > num_samples - 1:
@@ -98,12 +98,11 @@ class dlio_sampler(Sampler):
         self.indices = list(range(start_sample, end_sample + 1))
 
     def __len__(self):
-        return self.num_samples
+        # return self.num_samples
+        return len(self.indices)
 
     def __iter__(self):
         return iter(self.indices)
-        # for sample in self.indices:
-            # yield sample
 
 class TorchDataLoader(BaseDataLoader):
     @dlp.log_init
@@ -114,6 +113,7 @@ class TorchDataLoader(BaseDataLoader):
         dataset = TorchDataset(self.format_type, self.dataset_type, self.epoch_number, self.num_samples,
                                self._args.read_threads, self.batch_size)
         sampler = dlio_sampler(self._args.my_rank, self._args.comm_size, self.num_samples, self._args.epochs)
+        # self.logger.debug(f"rank {self._args.my_rank} length of sample {len(sampler)}")
         prefetch_factor = self._args.prefetch_size
         if prefetch_factor > 0:
             if self._args.my_rank == 0:
@@ -150,9 +150,9 @@ class TorchDataLoader(BaseDataLoader):
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
-                                       drop_last=False,
+                                       # drop_last=False,
                                        persistent_workers=self._args.persistent_workers,
-                                       # drop_last=True,
+                                       drop_last=True,
                                        # drop_last=True if self.batch_size > 1 else False,
                                        worker_init_fn=dataset.worker_init, 
                                        **kwargs)
@@ -164,15 +164,18 @@ class TorchDataLoader(BaseDataLoader):
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
-                                       drop_last=False,
+                                       # drop_last=False,
                                        persistent_workers=self._args.persistent_workers,
-                                       # drop_last=True,
+                                       drop_last=True,
                                        # drop_last=True if self.batch_size > 1 else False,
                                        worker_init_fn=dataset.worker_init,
                                        **kwargs)  # 2 is the default value
         self.logger.debug(f"{utcnow()} Rank {self._args.my_rank} will read {len(self._dataset) * self.batch_size} files")
 
         # self._dataset.sampler.set_epoch(epoch_number)
+
+    # def __len__(self):
+    #     return self._args.training_steps if self.dataset_type is DatasetType.TRAIN else self._args.eval_steps
 
     @dlp.log
     def next(self):
