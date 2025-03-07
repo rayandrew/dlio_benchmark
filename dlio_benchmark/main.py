@@ -20,6 +20,7 @@ import logging
 from time import time
 import json
 import numpy as np
+import tqdm.auto as tqdm
 
 # Reduce TF and CUDA logging
 from numpy import random
@@ -284,6 +285,16 @@ class DLIOBenchmark(object):
         self.stats.start_block(epoch, block)
 
         loader = self.framework.get_loader(dataset_type=DatasetType.TRAIN)
+
+        pbar = tqdm.tqdm(
+            desc=f"epoch {epoch}, rank {self.args.my_rank}",
+            total=max_steps,
+            position=self.args.my_rank,
+            leave=True,
+            disable=self.args.my_rank != 0,
+            bar_format="{l_bar}{bar}|{n}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
+        )
+
         self.stats.start_loading()
         for batch in loader.next():
             self.stats.batch_loaded(epoch, overall_step, block)
@@ -307,20 +318,27 @@ class DLIOBenchmark(object):
                 self.next_checkpoint_step += self.steps_between_checkpoints
             else:
                 block_step += 1
+            # @Ray: need to add this to make the iteration similar
+            overall_step += 1
+            pbar.update()
+            # if overall_step % 1459 == 0 and self.args.my_rank == 0:
+            #     self.logger.output(f"{utcnow()} Overall step %s and total training_step %s", overall_step, total_training_step)
             if overall_step > max_steps or ((self.total_training_steps > 0) and (overall_step > self.total_training_steps)):
                 if self.args.my_rank == 0:
-                    self.logger.info(f"{utcnow()} Maximum number of steps reached")
+                    self.logger.output(f"{utcnow()} Maximum number of steps reached")
                 if (not self.do_checkpoint):
                     self.stats.end_block(epoch, block, block_step - 1)
                 break
             # @Ray: need to add this to make the iteration similar
-            overall_step += 1
+            # overall_step += 1
             # start a new block here
             if block_step == 1 and block != 1:
                 self.stats.start_block(epoch, block)
             self.stats.start_loading()
 
+        pbar.close()
         self.comm.barrier()
+
         if self.do_checkpoint and (self.steps_between_checkpoints < 0) and (epoch == self.next_checkpoint_epoch):
             self.stats.end_block(epoch, block, block_step-1)
             self.stats.start_save_ckpt(epoch, block, overall_step-1)
@@ -367,7 +385,7 @@ class DLIOBenchmark(object):
                 self.stats.start_train(epoch)
                 steps = self._train(epoch)
                 self.stats.end_train(epoch, steps)
-                self.logger.debug(f"{utcnow()} Rank {self.my_rank} returned after {steps} steps.")
+                self.logger.output(f"{utcnow()} Rank {self.my_rank} returned after {steps} steps.")
                 self.framework.get_loader(DatasetType.TRAIN).finalize()
                 # Perform evaluation if enabled
                 if self.do_eval and epoch >= next_eval_epoch:
