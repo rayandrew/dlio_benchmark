@@ -17,6 +17,7 @@
 import logging
 
 import h5py
+import numpy as np
 
 from dlio_benchmark.common.constants import MODULE_DATA_READER
 from dlio_benchmark.utils.utility import Profile
@@ -31,6 +32,13 @@ class HDF5Reader(FormatReader):
     @dlp.log_init
     def __init__(self, dataset_type, thread_index, epoch):
         super().__init__(dataset_type, thread_index)
+        self.num_dataset_per_record = self._args.num_dataset_per_record
+        self.reader_num_dataset_per_record = self._args.reader_num_dataset_per_record
+        self.random_access_dataset = self._args.random_access_dataset
+        if self.num_dataset_per_record > self.reader_num_dataset_per_record and self.random_access_dataset:
+            self.choices = np.random.randint(0, self.num_dataset_per_record, size=self.reader_num_dataset_per_record)
+        else:
+            self.choices = list(range(self.reader_num_dataset_per_record))
 
     @dlp.log
     def open(self, filename):
@@ -44,9 +52,12 @@ class HDF5Reader(FormatReader):
     @dlp.log
     def get_sample(self, filename, sample_index):
         super().get_sample(filename, sample_index)
-        image = self.open_file_map[filename]['records'][sample_index]
-        dlp.update(image_size=image.nbytes)
-        del image
+        bytes = 0
+        for i in self.choices:
+            image = self.open_file_map[filename][f'records_{i}'][sample_index]
+            bytes += image.nbytes
+            del image
+        dlp.update(image_size=int(bytes))
 
     def next(self):
         for batch in super().next():

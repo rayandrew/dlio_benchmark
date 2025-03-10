@@ -36,8 +36,10 @@ class HDF5Generator(DataGenerator):
     def __init__(self):
         super().__init__()
         self.chunk_size = self._args.chunk_size
-        self.enable_chunking = self._args.enable_chunking
-        self.chunk_dim = self._args.chunk_dim
+        self.chunk_dims = self._args.chunk_dims
+        self.num_dataset_per_record = self._args.num_dataset_per_record
+        self.record_element_bytes = self._args.record_element_bytes
+        self.record_element_dtype = self._args.bytes_to_np_dtype(self.record_element_bytes)
 
     @dlp.log    
     def generate(self):
@@ -48,15 +50,18 @@ class HDF5Generator(DataGenerator):
         np.random.seed(10)
         record_labels = [0] * self.num_samples
         dim = self.get_dimension(self.total_files_to_generate)
+        if self.num_dataset_per_record > 1:
+            dim = [[int(d[0] / self.num_dataset_per_record), *d[1:]] for d in dim]
         chunks = None
-        if self.enable_chunking:
-            if len(self.chunk_dim) != 2:
-                chunk_dimension = int(math.ceil(math.sqrt(self.chunk_size)))
-                if chunk_dimension > self._dimension:
-                    chunk_dimension = self._dimension
-                chunks = (1, chunk_dimension, chunk_dimension)
-            else:
-                chunks = (1, *self.chunk_dim)
+        # if len(self.chunk_dims) == 0:
+        #     chunk_dimension = int(math.ceil(math.sqrt(self.chunk_size)))
+        #     if chunk_dimension > self._dimension:
+        #         chunk_dimension = self._dimension
+        #     chunks = (1, chunk_dimension, chunk_dimension)
+        # else:
+        if len(self.chunk_dims) > 0:
+            chunks = self.chunk_dims
+
         compression = None
         compression_level = None
         if self.compression != Compression.NONE:
@@ -65,13 +70,19 @@ class HDF5Generator(DataGenerator):
                 compression_level = self.compression_level
         for i in dlp.iter(range(self.my_rank, int(self.total_files_to_generate), self.comm_size)):
             dim1 = dim[2*i]
-            dim2 = dim[2*i+1]
-            records = np.random.randint(255, size=(dim1, dim2, self.num_samples), dtype=np.uint8)
+            if isinstance(dim1, list):
+                shape = (self.num_samples, *dim1)
+                records = np.random.randint(255, size=(*dim1, self.num_samples), dtype=self.record_element_dtype)
+            else:
+                dim2 = dim[2*i+1]
+                shape = (self.num_samples, dim1, dim2)
+                records = np.random.randint(255, size=(dim1, dim2, self.num_samples), dtype=self.record_element_dtype)
             out_path_spec = self.storage.get_uri(self._file_list[i])
             progress(i+1, self.total_files_to_generate, "Generating HDF5 Data")
             hf = h5py.File(out_path_spec, 'w')
-            hf.create_dataset('records', (self.num_samples, dim1, dim2), chunks=chunks, compression=compression,
-                                    compression_opts=compression_level, dtype=np.uint8, data=records)
+            for record_id in range(self.num_dataset_per_record):
+                hf.create_dataset(f'records_{record_id}', shape, chunks=chunks, compression=compression,
+                                  compression_opts=compression_level, dtype=self.record_element_dtype, data=records)
             hf.create_dataset('labels', data=record_labels)
             hf.close()
         np.random.seed()
