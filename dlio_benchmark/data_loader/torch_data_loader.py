@@ -80,7 +80,7 @@ class TorchDataset(Dataset):
     def __getitem__(self, image_idx):
         self.num_images_read += 1
         step = int(math.ceil(self.num_images_read / self.batch_size))
-        self.logger.debug(f"{utcnow()} Rank {DLIOMPI.get_instance().rank()} reading {image_idx} sample")
+        self.logger.debug(f"{utcnow()} Rank {DLIOMPI.get_instance().rank()} reading sample #{image_idx}, num_images_read {self.num_images_read}")
         dlp.update(step = step)
         return (self.reader.read_index(image_idx, step), )
 

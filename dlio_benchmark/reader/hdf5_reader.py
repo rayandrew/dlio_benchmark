@@ -32,31 +32,32 @@ class HDF5Reader(FormatReader):
     @dlp.log_init
     def __init__(self, dataset_type, thread_index, epoch):
         super().__init__(dataset_type, thread_index)
-        self.num_dataset_per_record = self._args.num_dataset_per_record
-        self.reader_num_dataset_per_record = self._args.reader_num_dataset_per_record
-        self.random_access_dataset = self._args.random_access_dataset
-        if self.num_dataset_per_record > self.reader_num_dataset_per_record and self.random_access_dataset:
-            self.choices = np.random.randint(0, self.num_dataset_per_record, size=self.reader_num_dataset_per_record)
-        else:
-            self.choices = list(range(self.reader_num_dataset_per_record))
+        self.choices = list(range(self._args.num_dataset_per_record))
+        
 
     @dlp.log
     def open(self, filename):
-        super().open(filename)
-        return h5py.File(filename, 'r')
+        filenames = super().open(filename)
+        fds = []
+        for filename in filenames:
+            # self.logger.output(f"Opening {filename}")
+            fds.append(h5py.File(filename, 'r'))
+        return fds
 
     @dlp.log
     def close(self, filename):
-        self.open_file_map[filename].close()
+        for fd in self.open_file_map[filename]:
+            fd.close()
 
     @dlp.log
     def get_sample(self, filename, sample_index):
         super().get_sample(filename, sample_index)
         bytes = 0
-        for i in self.choices:
-            image = self.open_file_map[filename][f'records_{i}'][sample_index]
-            bytes += image.nbytes
-            del image
+        for fd in self.open_file_map[filename]:
+            for i in self.choices:
+                image = fd[f'records_{i}'][sample_index]
+                bytes += image.nbytes
+                del image
         dlp.update(image_size=int(bytes))
 
     def next(self):

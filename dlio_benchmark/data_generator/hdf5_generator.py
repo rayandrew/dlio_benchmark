@@ -35,11 +35,28 @@ Generator for creating data in HDF5 format.
 class HDF5Generator(DataGenerator):
     def __init__(self):
         super().__init__()
-        self.chunk_size = self._args.chunk_size
-        self.chunk_dims = self._args.chunk_dims
-        self.num_dataset_per_record = self._args.num_dataset_per_record
-        self.record_element_bytes = self._args.record_element_bytes
-        self.record_element_dtype = self._args.bytes_to_np_dtype(self.record_element_bytes)
+
+        self.record_element_dtype = self._args.bytes_to_np_dtype(self._args.record_element_bytes)
+
+        self.record_labels = [0] * self.num_samples
+        self.chunks = None
+        if len(self._args.chunk_dims) > 0:
+            self.chunks = self._args.chunk_dims
+
+        self.hdf5_compression = None
+        self.hdf5_compression_level = None
+        if self.compression != Compression.NONE:
+            self.hdf5_compression = str(self.compression)
+            if self.compression == Compression.GZIP:
+                self.hdf5_compression_level = self.compression_level
+
+    def create_file(self, name, shape, records):
+        hf = h5py.File(name, 'w')
+        for dataset_id in range(self._args.num_dataset_per_record):
+            hf.create_dataset(f'records_{dataset_id}', shape, chunks=self.chunks, compression=self.hdf5_compression,
+                              compression_opts=self.hdf5_compression_level, dtype=self.record_element_dtype, data=records)
+        hf.create_dataset('labels', data=self.record_labels)
+        hf.close()
 
     @dlp.log    
     def generate(self):
@@ -47,27 +64,13 @@ class HDF5Generator(DataGenerator):
         Generate hdf5 data for training. It generates a 3d dataset and writes it to file.
         """
         super().generate()
-        np.random.seed(10)
-        record_labels = [0] * self.num_samples
-        dim = self.get_dimension(self.total_files_to_generate)
-        if self.num_dataset_per_record > 1:
-            dim = [[int(d[0] / self.num_dataset_per_record), *d[1:]] for d in dim]
-        chunks = None
-        # if len(self.chunk_dims) == 0:
-        #     chunk_dimension = int(math.ceil(math.sqrt(self.chunk_size)))
-        #     if chunk_dimension > self._dimension:
-        #         chunk_dimension = self._dimension
-        #     chunks = (1, chunk_dimension, chunk_dimension)
-        # else:
-        if len(self.chunk_dims) > 0:
-            chunks = self.chunk_dims
 
-        compression = None
-        compression_level = None
-        if self.compression != Compression.NONE:
-            compression = str(self.compression)
-            if self.compression == Compression.GZIP:
-                compression_level = self.compression_level
+        np.random.seed(10)
+
+        dim = self.get_dimension(self.total_files_to_generate)
+        if self._args.num_dataset_per_record > 1:
+            dim = [[int(d[0] / self._args.num_dataset_per_record), *d[1:]] for d in dim]
+
         for i in dlp.iter(range(self.my_rank, int(self.total_files_to_generate), self.comm_size)):
             dim1 = dim[2*i]
             if isinstance(dim1, list):
@@ -77,12 +80,17 @@ class HDF5Generator(DataGenerator):
                 dim2 = dim[2*i+1]
                 shape = (self.num_samples, dim1, dim2)
                 records = np.random.randint(255, size=(dim1, dim2, self.num_samples), dtype=self.record_element_dtype)
-            out_path_spec = self.storage.get_uri(self._file_list[i])
+
             progress(i+1, self.total_files_to_generate, "Generating HDF5 Data")
-            hf = h5py.File(out_path_spec, 'w')
-            for record_id in range(self.num_dataset_per_record):
-                hf.create_dataset(f'records_{record_id}', shape, chunks=chunks, compression=compression,
-                                  compression_opts=compression_level, dtype=self.record_element_dtype, data=records)
-            hf.create_dataset('labels', data=record_labels)
-            hf.close()
+
+            out_path_spec = self.storage.get_uri(self._file_list[i])
+            if self._args.files_per_record is not None and self._args.files_per_record > 0:
+                self.storage.create_node(out_path_spec, exist_ok=True)
+                for j in range(self._args.files_per_record):
+                    name = f"{self._file_list[i]}/{j}.part"
+                    out_path_spec = self.storage.get_uri(name)
+                    self.create_file(name=out_path_spec, shape=shape, records=records)
+            else:
+                self.create_file(name=out_path_spec, shape=shape, records=records)
+
         np.random.seed()

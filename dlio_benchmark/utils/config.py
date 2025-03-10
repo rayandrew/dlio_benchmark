@@ -140,11 +140,17 @@ class ConfigArguments:
     persistent_workers: bool = False
     disable_collation: bool = False
 
-    # hdf5
+    ##########################################
+    # NEW API
+    ##########################################
+    ## reader
+    files_per_record: int = None
+
+    ## hdf5
     num_dataset_per_record: int = 1
     chunk_dims: ClassVar[List[int]] = []
     random_access_dataset: bool = False
-    reader_num_dataset_per_record: int = 1
+    ##########################################
 
     # derived fields
     required_samples: int = 1
@@ -348,7 +354,7 @@ class ConfigArguments:
             self.required_samples = self.comm_size * self.batch_size
             if self.read_threads > 0:
                 self.required_samples *= self.read_threads
-            self.training_steps = int(math.floor(self.total_samples_train / self.batch_size / self.comm_size))
+            self.training_steps = int(math.floor(self.total_samples_train  / self.batch_size / self.comm_size))
             self.eval_steps = int(math.floor(self.total_samples_eval / self.batch_size_eval / self.comm_size))
         if self.data_loader_sampler is None and self.data_loader_classname is None:
             if self.data_loader == DataLoaderType.TENSORFLOW:
@@ -408,7 +414,7 @@ class ConfigArguments:
             num_threads = 1
             if self.read_threads > 0 and self.data_loader is not DataLoaderType.DALI:
                 num_threads = self.read_threads
-            samples_per_proc = int(math.ceil(total_samples/self.comm_size)) 
+            samples_per_proc = int(math.ceil(total_samples / self.comm_size)) 
             self.samples_per_thread = samples_per_proc // num_threads
             start_sample_index = samples_per_proc * self.my_rank
             end_sample_index = samples_per_proc * (self.my_rank + 1) - 1
@@ -449,7 +455,7 @@ class ConfigArguments:
         if num_files > 0:
             end_sample = total_samples - 1
             remainder = total_samples % self.comm_size
-            samples_per_proc = int(math.floor(total_samples/self.comm_size))
+            samples_per_proc = int(math.floor(total_samples / self.comm_size))
             start_sample = self.my_rank * samples_per_proc
             end_sample = (self.my_rank + 1) * samples_per_proc - 1
             if end_sample > total_samples - 1:
@@ -469,6 +475,8 @@ class ConfigArguments:
                 abs_path = os.path.abspath(file_list[file_index])
                 sample_index = global_sample_index % self.num_samples_per_file
                 process_thread_file_map[global_sample_index] = (abs_path, sample_index)
+
+        # self.logger.output(f"here my rank: {self.my_rank}, samples sum {samples_sum}")
         return process_thread_file_map, samples_sum
 
     @dlp.log
@@ -481,6 +489,7 @@ class ConfigArguments:
                     np.random.seed(self.seed)
                 np.random.shuffle(self.file_list_train) 
                 np.random.shuffle(self.file_list_eval)
+        # self.logger.output("here aaaaa")
         if self.data_loader_sampler == DataLoaderSampler.ITERATIVE:
             self.train_file_map, local_train_sample_sum = self.build_sample_map_iter(self.file_list_train, self.total_samples_train,
                                                              epoch_number)
@@ -499,6 +508,7 @@ class ConfigArguments:
                 raise Exception(f"Sharding of train samples are missing samples got {global_train_sample_sum} but expected {self.train_sample_index_sum}")
             
             if self.eval_sample_index_sum != global_eval_sample_sum:
+                self.logger.output(f"Something wrong here, global_train_sample_sum={global_eval_sample_sum}, local_train_sample_sum={local_eval_sample_sum}, total_samples_train={self.total_samples_train}, expected_train_sample_index_sum={self.eval_sample_index_sum}...")
                 raise Exception(f"Sharding of eval samples are missing samples got {global_eval_sample_sum} but expected {self.eval_sample_index_sum}")
 
 def LoadConfig(args, config):
@@ -549,14 +559,19 @@ def LoadConfig(args, config):
             args.format = FormatType(config['dataset']['format'])
         if 'keep_files' in config['dataset']:
             args.keep_files = config['dataset']['keep_files']
-        
+
+        ##########################################
         # new API
+        ##########################################
         if 'record_element_bytes' in config['dataset']:
             args.record_element_bytes = config['dataset']['record_element_bytes']
         if 'record_dims' in config['dataset']:
             args.record_dims = list(config['dataset']['record_dims'])
-            # recalculaate args.record_length
+            # recalculate args.record_length
             args.record_length = np.prod(args.record_dims) * args.record_element_bytes
+
+        if 'files_per_record' in config['dataset']:
+            args.files_per_record = config['dataset']['files_per_record']
 
         # new API
         # hdf5 only config
@@ -568,7 +583,6 @@ def LoadConfig(args, config):
                 if len(args.record_dims) > 0:
                     if args.record_dims[0] % args.num_dataset_per_record != 0:
                         raise ValueError("hdf5.num_dataset_per_record should be divisible by record_dims[0]")
-                args.reader_num_dataset_per_record = args.num_dataset_per_record
 
     # data reader
     reader = None
@@ -632,15 +646,6 @@ def LoadConfig(args, config):
             args.persistent_workers = reader['persistent_workers']
         if 'disable_collation' in reader:
             args.disable_collation = reader['disable_collation']
-
-        # new API
-        if 'hdf5' in reader:
-            if 'random_access_dataset' in reader['hdf5']:
-                args.random_access_dataset = reader['hdf5']['random_access_dataset']
-            if 'num_dataset_per_record' in reader['hdf5']:
-                args.reader_num_dataset_per_record = reader['hdf5']['num_dataset_per_record']
-                if args.reader_num_dataset_per_record > args.num_dataset_per_record:
-                    raise ValueError(f"reader_num_dataset_per_record ({args.reader_num_dataset_per_record} should be less than num_dataset_per_record ({args.num_dataset_per_record})")
 
     # training relevant setting
     if 'train' in config:

@@ -44,13 +44,13 @@ class FormatReader(ABC):
             f"Loading {self.__class__.__qualname__} reader on thread {self.thread_index} from rank {self._args.my_rank}")
         self.dataset_type = dataset_type
         self.open_file_map = {}
-
         if FormatReader.read_images is None:
             FormatReader.read_images = 0
         self.step = 1
         self.image_idx = 0
         self._file_list = self._args.file_list_train if self.dataset_type is DatasetType.TRAIN else self._args.file_list_eval 
         self.batch_size = self._args.batch_size if self.dataset_type is DatasetType.TRAIN else self._args.batch_size_eval
+        self.storage = StorageFactory().get_storage(self._args.storage_type, self._args.storage_root, self._args.framework)
         if dataset_type is DatasetType.TRAIN:
             self.global_index_map = self._args.train_global_index_map
             self.file_map = self._args.train_file_map
@@ -63,9 +63,22 @@ class FormatReader(ABC):
         sleep(self._args.preprocess_time)
         return a
 
+    def get_filenames(self, filename):
+        filenames: list[str] = []
+        if self._args.files_per_record is not None and self._args.files_per_record > 0:
+            base_path = self.storage.get_uri(filename)
+            for j in range(self._args.files_per_record):
+                name = f"{base_path}/{j}.part"
+                path = self.storage.get_uri(name)
+                filenames.append(path)
+        else:
+            filenames.append(filename)
+
+        return filenames
+
     @abstractmethod
     def open(self, filename):
-        return 
+        return self.get_filenames(filename)
 
     @abstractmethod
     def close(self, filename):
@@ -111,16 +124,18 @@ class FormatReader(ABC):
     def read_index(self, global_sample_idx, step):
         self.step = step
         self.image_idx = global_sample_idx
-        self.logger.debug(f"{self.global_index_map}")
+        # self.logger.debug(f"{self.global_index_map}")
         filename, sample_index = self.global_index_map[global_sample_idx]
         self.logger.debug(f"{utcnow()} read_index {filename}, {sample_index}")
         FormatReader.read_images += 1
         if self._args.read_type is ReadType.ON_DEMAND or filename not in self.open_file_map or self.open_file_map[filename] is None:
+            # self.logger.debug(f"opening {filename}")
             self.open_file_map[filename] = self.open(filename)
         self.get_sample(filename, sample_index)
         self.preprocess()
         if self._args.read_type is ReadType.ON_DEMAND:
             self.close(filename)
+            # self.logger.debug(f"closing {filename}")
             self.open_file_map[filename] = None
         return self._args.resized_image
 

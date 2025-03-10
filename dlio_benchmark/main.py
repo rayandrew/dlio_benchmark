@@ -193,23 +193,29 @@ class DLIOBenchmark(object):
                 if self.storage.get_node(
                         os.path.join(self.args.data_folder, f"{dataset_type}",
                                     filenames[0])) == MetadataType.DIRECTORY:
-                    assert (num_subfolders == len(filenames))
-                    fullpaths = self.storage.walk_node(
-                        os.path.join(self.args.data_folder, f"{dataset_type}/*/*.{self.args.format}"),
-                        use_pattern=True)
+                    if self.args.files_per_record is None:
+                        assert (num_subfolders == len(filenames))
+                        fullpaths = self.storage.walk_node(
+                            os.path.join(self.args.data_folder, f"{dataset_type}/*/*.{self.args.format}"),
+                            use_pattern=True)
+                    else:
+                        fullpaths = self.storage.walk_node(
+                            os.path.join(self.args.data_folder, f"{dataset_type}/*.{self.args.format}"),
+                            use_pattern=True)
                     files = [self.storage.get_basename(f) for f in fullpaths]
                     idx = np.argsort(files)
                     fullpaths = [fullpaths[i] for i in idx]
                 else:
-                    assert (num_subfolders == 0)
+                    if self.args.files_per_record is None:
+                        assert (num_subfolders == 0)
                     fullpaths = [self.storage.get_uri(os.path.join(self.args.data_folder, f"{dataset_type}", entry))
                                 for entry in filenames if entry.endswith(f'{self.args.format}')]
                     fullpaths = sorted(fullpaths)
-                self.logger.debug(f"subfolder {num_subfolders} fullpaths {fullpaths}")
                 if dataset_type is DatasetType.TRAIN:
                     file_list_train = fullpaths
                 elif dataset_type is DatasetType.VALID:
                     file_list_eval = fullpaths
+            
             if not self.generate_only and self.num_files_train > len(file_list_train):
                 raise Exception(
                     "Not enough training dataset is found; Please run the code with ++workload.workflow.generate_data=True")
@@ -318,10 +324,7 @@ class DLIOBenchmark(object):
                 self.next_checkpoint_step += self.steps_between_checkpoints
             else:
                 block_step += 1
-            # @Ray: need to add this to make the iteration similar
-            # overall_step += 1
-            # if overall_step % 1459 == 0 and self.args.my_rank == 0:
-            #     self.logger.output(f"{utcnow()} Overall step %s and total training_step %s", overall_step, total_training_step)
+
             if overall_step > max_steps or ((self.total_training_steps > 0) and (overall_step > self.total_training_steps)):
                 if self.args.my_rank == 0:
                     self.logger.output(f"{utcnow()} Maximum number of steps reached")
