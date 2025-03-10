@@ -59,6 +59,8 @@ class ConfigArguments:
     record_length: int = 64 * 1024
     record_length_stdev: int = 0
     record_length_resize: int = 0
+    record_dims: ClassVar[List[int]] = []
+    record_element_bytes: int = 1
     num_files_train: int = 8
     num_samples_per_file: int = 1
     batch_size: int = 1
@@ -90,9 +92,7 @@ class ConfigArguments:
     computation_time: ClassVar[Dict[str, Any]] = {}
     preprocess_time: ClassVar[Dict[str, Any]] = {}
     prefetch_size: int = 2
-    enable_chunking: bool = False
     chunk_size: int = 0
-    chunk_dim: ClassVar[List[int]] = []
     transformed_sample: ClassVar[List[int]] = []
     compression: Compression = Compression.NONE
     compression_level: int = 4
@@ -139,6 +139,12 @@ class ConfigArguments:
     pin_memory: bool = True
     persistent_workers: bool = False
     disable_collation: bool = False
+
+    # hdf5
+    num_dataset_per_record: int = 1
+    chunk_dims: ClassVar[List[int]] = []
+    random_access_dataset: bool = False
+    reader_num_dataset_per_record: int = 1
 
     # derived fields
     required_samples: int = 1
@@ -291,21 +297,41 @@ class ConfigArguments:
         total_samples_divisible = int(math.floor(total_samples / self.comm_size)) * self.comm_size
         return total_samples_divisible * (total_samples_divisible - 1) // 2
 
+    def bytes_to_np_dtype(self, bytes: int) -> np.dtype:
+        if bytes == 1:
+            return np.uint8
+        if bytes == 2:
+            return np.uint16
+        if bytes == 4:
+            return np.uint32
+        if bytes == 8:
+            return np.uint64
+        raise ValueError(f"{bytes}B are not defined in np.dtype")
+
     @dlp.log
     def derive_configurations(self, file_list_train=None, file_list_eval=None):
-        self.dimension = int(math.sqrt(self.record_length))
-        self.dimension_stdev = self.record_length_stdev / 2.0 / math.sqrt(self.record_length)
-        self.max_dimension = self.dimension
+        record_dims_length = len(self.record_dims)
+        if record_dims_length > 0:
+            self.dimension = self.record_dims
+            self.dimension_stdev = self.record_length_stdev / 2.0 / self.record_length
+            self.max_dimension = int(math.sqrt(self.record_length))
+        else:
+            self.dimension = int(math.sqrt(self.record_length))
+            self.dimension_stdev = self.record_length_stdev / 2.0 / math.sqrt(self.record_length)
+            self.max_dimension = self.dimension
+
+        if self.record_length_resize > 0:
+            self.max_dimension = int(math.sqrt(self.record_length_resize))
+
         if self.checkpoint_mechanism == CheckpointMechanismType.NONE:
             if self.framework == FrameworkType.TENSORFLOW:
                 self.checkpoint_mechanism = CheckpointMechanismType.TF_SAVE
             elif self.framework == FrameworkType.PYTORCH:
                 self.checkpoint_mechanism = CheckpointMechanismType.PT_SAVE
-        if (self.record_length_resize > 0):
-            self.max_dimension = int(math.sqrt(self.record_length_resize))
+
         if (file_list_train != None and file_list_eval != None):
             if self.transformed_sample is not None and len(self.transformed_sample) > 0:
-                logging.info(f"Using transformed sample size {self.transformed_sample}")
+                self.logger.output(f"Using transformed sample size {self.transformed_sample}")
                 self.resized_image = np.random.randint(255, size=self.transformed_sample, dtype=np.uint8)
             else:
                 self.resized_image = np.random.randint(255, size=(self.max_dimension, self.max_dimension), dtype=np.uint8)
@@ -511,12 +537,8 @@ def LoadConfig(args, config):
             args.num_subfolders_train = config['dataset']['num_subfolders_train']
         if 'num_subfolders_eval' in config['dataset']:
             args.num_subfolders_eval = config['dataset']['num_subfolders_eval']
-        if 'enable_chunking' in config['dataset']:
-            args.enable_chunking = config['dataset']['enable_chunking']
         if 'chunk_size' in config['dataset']:
             args.chunk_size = config['dataset']['chunk_size']
-        if 'chunk_dim' in config['dataset']:
-            args.chunk_dim = config['dataset']['chunk_dim']
         if 'compression' in config['dataset']:
             args.compression = config['dataset']['compression']
         if 'compression_level' in config['dataset']:
@@ -527,6 +549,26 @@ def LoadConfig(args, config):
             args.format = FormatType(config['dataset']['format'])
         if 'keep_files' in config['dataset']:
             args.keep_files = config['dataset']['keep_files']
+        
+        # new API
+        if 'record_element_bytes' in config['dataset']:
+            args.record_element_bytes = config['dataset']['record_element_bytes']
+        if 'record_dims' in config['dataset']:
+            args.record_dims = list(config['dataset']['record_dims'])
+            # recalculaate args.record_length
+            args.record_length = np.prod(args.record_dims) * args.record_element_bytes
+
+        # new API
+        # hdf5 only config
+        if 'hdf5' in config['dataset']:
+            if 'chunk_dims' in config['dataset']['hdf5']:
+                args.chunk_dims = config['dataset']['hdf5']['chunk_dims']
+            if 'num_dataset_per_record' in config['dataset']['hdf5']:
+                args.num_dataset_per_record = config['dataset']['hdf5']['num_dataset_per_record']
+                if len(args.record_dims) > 0:
+                    if args.record_dims[0] % args.num_dataset_per_record != 0:
+                        raise ValueError("hdf5.num_dataset_per_record should be divisible by record_dims[0]")
+                args.reader_num_dataset_per_record = args.num_dataset_per_record
 
     # data reader
     reader = None
@@ -591,6 +633,14 @@ def LoadConfig(args, config):
         if 'disable_collation' in reader:
             args.disable_collation = reader['disable_collation']
 
+        # new API
+        if 'hdf5' in reader:
+            if 'random_access_dataset' in reader['hdf5']:
+                args.random_access_dataset = reader['hdf5']['random_access_dataset']
+            if 'num_dataset_per_record' in reader['hdf5']:
+                args.reader_num_dataset_per_record = reader['hdf5']['num_dataset_per_record']
+                if args.reader_num_dataset_per_record > args.num_dataset_per_record:
+                    raise ValueError(f"reader_num_dataset_per_record ({args.reader_num_dataset_per_record} should be less than num_dataset_per_record ({args.num_dataset_per_record})")
 
     # training relevant setting
     if 'train' in config:
