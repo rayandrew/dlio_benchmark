@@ -319,8 +319,7 @@ class DLIOBenchmark(object):
             else:
                 block_step += 1
             # @Ray: need to add this to make the iteration similar
-            overall_step += 1
-            pbar.update()
+            # overall_step += 1
             # if overall_step % 1459 == 0 and self.args.my_rank == 0:
             #     self.logger.output(f"{utcnow()} Overall step %s and total training_step %s", overall_step, total_training_step)
             if overall_step > max_steps or ((self.total_training_steps > 0) and (overall_step > self.total_training_steps)):
@@ -330,7 +329,8 @@ class DLIOBenchmark(object):
                     self.stats.end_block(epoch, block, block_step - 1)
                 break
             # @Ray: need to add this to make the iteration similar
-            # overall_step += 1
+            overall_step += 1
+            pbar.update()
             # start a new block here
             if block_step == 1 and block != 1:
                 self.stats.start_block(epoch, block)
@@ -385,7 +385,7 @@ class DLIOBenchmark(object):
                 self.stats.start_train(epoch)
                 steps = self._train(epoch)
                 self.stats.end_train(epoch, steps)
-                self.logger.output(f"{utcnow()} Rank {self.my_rank} returned after {steps} steps.")
+                self.logger.info(f"{utcnow()} Rank {self.my_rank} returned after {steps} steps.")
                 self.framework.get_loader(DatasetType.TRAIN).finalize()
                 # Perform evaluation if enabled
                 if self.do_eval and epoch >= next_eval_epoch:

@@ -287,6 +287,10 @@ class ConfigArguments:
     def reset():
         ConfigArguments.__instance = None
 
+    def calc_samples_sum(self, total_samples: int):
+        total_samples_divisible = int(math.floor(total_samples / self.comm_size)) * self.comm_size
+        return total_samples_divisible * (total_samples_divisible - 1) // 2
+
     @dlp.log
     def derive_configurations(self, file_list_train=None, file_list_eval=None):
         self.dimension = int(math.sqrt(self.record_length))
@@ -311,13 +315,15 @@ class ConfigArguments:
             self.num_files_train = len(file_list_train)
             self.total_samples_train = self.num_samples_per_file * len(self.file_list_train)
             self.total_samples_eval = self.num_samples_per_file * len(self.file_list_eval)
-            self.train_sample_index_sum = self.total_samples_train * (self.total_samples_train - 1) // 2
-            self.eval_sample_index_sum = self.total_samples_eval * (self.total_samples_eval - 1) // 2
+            # self.train_sample_index_sum = self.total_samples_train * (self.total_samples_train - 1) // 2
+            # self.eval_sample_index_sum = self.total_samples_eval * (self.total_samples_eval - 1) // 2
+            self.train_sample_index_sum = self.calc_samples_sum(self.total_samples_train)
+            self.eval_sample_index_sum = self.calc_samples_sum(self.total_samples_eval)
             self.required_samples = self.comm_size * self.batch_size
             if self.read_threads > 0:
                 self.required_samples *= self.read_threads
-            self.training_steps = int(math.ceil(self.total_samples_train / self.batch_size / self.comm_size))
-            self.eval_steps = int(math.ceil(self.total_samples_eval / self.batch_size_eval / self.comm_size))
+            self.training_steps = int(math.floor(self.total_samples_train / self.batch_size / self.comm_size))
+            self.eval_steps = int(math.floor(self.total_samples_eval / self.batch_size_eval / self.comm_size))
         if self.data_loader_sampler is None and self.data_loader_classname is None:
             if self.data_loader == DataLoaderType.TENSORFLOW:
                 self.data_loader_sampler = DataLoaderSampler.ITERATIVE
@@ -416,13 +422,14 @@ class ConfigArguments:
         samples_sum = 0
         if num_files > 0:
             end_sample = total_samples - 1
+            remainder = total_samples % self.comm_size
             samples_per_proc = int(math.floor(total_samples/self.comm_size))
             start_sample = self.my_rank * samples_per_proc
             end_sample = (self.my_rank + 1) * samples_per_proc - 1
             if end_sample > total_samples - 1:
                 end_sample = total_samples - 1
             sample_list = np.arange(start_sample, end_sample + 1)
-            self.logger.debug(f"my_rank: {self.my_rank}, start_sample: {start_sample}, end_sample: {end_sample}, len sample_list: {len(sample_list)}")
+            self.logger.output(f"my_rank: {self.my_rank}, start_sample: {start_sample}, end_sample: {end_sample}, len sample_list: {len(sample_list)}, remainder: {remainder}")
             if self.sample_shuffle is not Shuffle.OFF:
                 if self.seed_change_epoch:
                     np.random.seed(self.seed + epoch_number)
@@ -431,7 +438,7 @@ class ConfigArguments:
                 np.random.shuffle(sample_list)
             for sample_index in range(end_sample - start_sample + 1):
                 global_sample_index = sample_list[sample_index]
-                samples_sum += global_sample_index + 1
+                samples_sum += global_sample_index
                 file_index = int(math.floor(global_sample_index/self.num_samples_per_file))
                 abs_path = os.path.abspath(file_list[file_index])
                 sample_index = global_sample_index % self.num_samples_per_file
@@ -462,7 +469,7 @@ class ConfigArguments:
         if self.my_rank == 0:
             self.logger.output(f"{utcnow()} Total number of samples: train {global_train_sample_sum}, eval {global_eval_sample_sum}")
             if self.train_sample_index_sum != global_train_sample_sum:
-                # self.logger.debug(f"Something wrong here, global_train_sample_sum={global_train_sample_sum}, local_train_sample_sum={local_train_sample_sum}, total_samples_train={self.total_samples_train}, expected_train_sample_index_sum={self.train_sample_index_sum}...")
+                self.logger.output(f"Something wrong here, global_train_sample_sum={global_train_sample_sum}, local_train_sample_sum={local_train_sample_sum}, total_samples_train={self.total_samples_train}, expected_train_sample_index_sum={self.train_sample_index_sum}...")
                 raise Exception(f"Sharding of train samples are missing samples got {global_train_sample_sum} but expected {self.train_sample_index_sum}")
             
             if self.eval_sample_index_sum != global_eval_sample_sum:
