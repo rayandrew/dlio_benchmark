@@ -19,6 +19,7 @@ import logging
 import h5py
 import numpy as np
 
+from dlio_benchmark.common.enumerations import ReadType
 from dlio_benchmark.common.constants import MODULE_DATA_READER
 from dlio_benchmark.utils.utility import Profile
 from dlio_benchmark.reader.reader_handler import FormatReader
@@ -40,7 +41,6 @@ class HDF5Reader(FormatReader):
         filenames = super().open(filename)
         fds = []
         for filename in filenames:
-            # self.logger.output(f"Opening {filename}")
             fds.append(h5py.File(filename, 'r'))
         return fds
 
@@ -67,6 +67,34 @@ class HDF5Reader(FormatReader):
     @dlp.log
     def read_index(self, image_idx, step):
         return super().read_index(image_idx, step)
+
+    # @dlp.log
+    # def read_index(self, image_idx, step):
+    #     # return super().read_index(image_idx, step)
+    #     self.step = step
+    #     self.image_idx = image_idx
+    #     # self.logger.debug(f"{self.global_index_map}")
+    #     filename, sample_index = self.global_index_map[image_idx]
+    #     # self.logger.debug(f"{utcnow()} read_index {filename}, {sample_index}")
+    #     FormatReader.read_images += 1
+    # 
+    #     if self._args.read_type is ReadType.ON_DEMAND or filename not in self.open_file_map or self.open_file_map[filename] is None:
+    #         # self.logger.debug(f"opening {filename}")
+    #         bytes = 0
+    #         self.open_file_map[filename] = self.open(filename)
+    #         for filename in self.open_file_map[filename]:
+    #             with h5py.File(filename, 'r') as f:
+    #                 for i in self.choices:
+    #                     image = f[f'records_{i}'][sample_index]
+    #                     bytes += image.nbytes
+    #                     del image
+    #         dlp.update(image_size=int(bytes))
+    #     self.preprocess()
+    #     if self._args.read_type is ReadType.ON_DEMAND:
+    #         #     self.close(filename)
+    #         #     # self.logger.debug(f"closing {filename}")
+    #         self.open_file_map[filename] = None
+    #     return self._args.resized_image
 
     @dlp.log
     def finalize(self):

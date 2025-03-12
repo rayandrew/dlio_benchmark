@@ -136,7 +136,7 @@ class ConfigArguments:
     data_loader_sampler: DataLoaderSampler = None
     reader_classname: str = None
     multiprocessing_context: str = "fork"
-    pin_memory: bool = True
+    pin_memory: bool = False
     persistent_workers: bool = False
     disable_collation: bool = False
 

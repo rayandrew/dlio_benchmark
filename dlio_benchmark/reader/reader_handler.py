@@ -124,18 +124,15 @@ class FormatReader(ABC):
     def read_index(self, global_sample_idx, step):
         self.step = step
         self.image_idx = global_sample_idx
-        # self.logger.debug(f"{self.global_index_map}")
         filename, sample_index = self.global_index_map[global_sample_idx]
         self.logger.debug(f"{utcnow()} read_index {filename}, {sample_index}")
         FormatReader.read_images += 1
         if self._args.read_type is ReadType.ON_DEMAND or filename not in self.open_file_map or self.open_file_map[filename] is None:
-            # self.logger.debug(f"opening {filename}")
             self.open_file_map[filename] = self.open(filename)
         self.get_sample(filename, sample_index)
         self.preprocess()
         if self._args.read_type is ReadType.ON_DEMAND:
             self.close(filename)
-            # self.logger.debug(f"closing {filename}")
             self.open_file_map[filename] = None
         return self._args.resized_image
 

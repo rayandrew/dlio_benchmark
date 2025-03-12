@@ -83,6 +83,7 @@ class TorchDataset(Dataset):
         self.logger.debug(f"{utcnow()} Rank {DLIOMPI.get_instance().rank()} reading sample #{image_idx}, num_images_read {self.num_images_read}")
         dlp.update(step = step)
         return (self.reader.read_index(image_idx, step), )
+        # return self.reader.read_index(image_idx, step)
 
 class dlio_sampler(Sampler):
     def __init__(self, rank, size, num_samples, epochs):
@@ -144,32 +145,24 @@ class TorchDataLoader(BaseDataLoader):
             if 'prefetch_factor' in kwargs:
                 del kwargs['prefetch_factor']
             self._dataset = DataLoader(dataset,
-                                       # batch_size=self.batch_size,
                                        batch_size=batch_size,
-                                       # batch_size=self.batch_size if self.batch_size > 1 else None,
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
-                                       # drop_last=False,
                                        persistent_workers=self._args.persistent_workers,
                                        drop_last=True,
-                                       # drop_last=True if self.batch_size > 1 else False,
                                        worker_init_fn=dataset.worker_init, 
                                        **kwargs)
         else: 
             self._dataset = DataLoader(dataset,
                                        batch_size=batch_size,
-                                       # batch_size=self.batch_size,
-                                       # batch_size=self.batch_size if self.batch_size > 1 else None,
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
-                                       # drop_last=False,
                                        persistent_workers=self._args.persistent_workers,
                                        drop_last=True,
-                                       # drop_last=True if self.batch_size > 1 else False,
                                        worker_init_fn=dataset.worker_init,
-                                       **kwargs)  # 2 is the default value
+                                       **kwargs)
         self.logger.debug(f"{utcnow()} Rank {self._args.my_rank} will read {len(self._dataset) * self.batch_size} files")
 
         # self._dataset.sampler.set_epoch(epoch_number)
