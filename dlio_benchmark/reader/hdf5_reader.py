@@ -33,7 +33,12 @@ class HDF5Reader(FormatReader):
     @dlp.log_init
     def __init__(self, dataset_type, thread_index, epoch):
         super().__init__(dataset_type, thread_index)
-        self.choices = list(range(self._args.num_dataset_per_record))
+        if self._args.original_num_dataset_per_record > self._args.num_dataset_per_record:
+            # if self._args.my_rank == 0:
+            #     self.logger.output("Will randomize the index of the dataset")
+            self.choices = np.random.choice(range(self._args.original_num_dataset_per_record), size=self._args.num_dataset_per_record)
+        else:
+            self.choices = list(range(self._args.num_dataset_per_record))
         
 
     @dlp.log

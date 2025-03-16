@@ -21,6 +21,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.sampler import Sampler
 import numpy as np
+from time import sleep as base_sleep
 
 from dlio_benchmark.common.constants import MODULE_DATA_LOADER
 from dlio_benchmark.common.enumerations import Shuffle, DatasetType, DataLoaderType
@@ -28,7 +29,7 @@ from dlio_benchmark.data_loader.base_data_loader import BaseDataLoader
 from dlio_benchmark.reader.reader_factory import ReaderFactory
 from dlio_benchmark.utils.utility import utcnow, DLIOMPI
 from dlio_benchmark.utils.config import ConfigArguments
-from dlio_benchmark.utils.utility import Profile, PerfTrace
+from dlio_benchmark.utils.utility import Profile, PerfTrace, sleep
 
 dlp = Profile(MODULE_DATA_LOADER)
 
@@ -105,6 +106,13 @@ class dlio_sampler(Sampler):
     def __iter__(self):
         return iter(self.indices)
 
+# @dlp.log
+# def _collate_fn(
+#     batch,
+# ):
+#     inp = torch.stack([torch.from_numpy(batch[i][0]) for i in range(len(batch))])
+#     return inp
+
 class TorchDataLoader(BaseDataLoader):
     @dlp.log_init
     def __init__(self, format_type, dataset_type, epoch_number):
@@ -126,32 +134,43 @@ class TorchDataLoader(BaseDataLoader):
                 self.logger.debug(
                     f"{utcnow()} Prefetch size is 0; a default prefetch factor of 2 will be set to Torch DataLoader.")
         self.logger.debug(f"{utcnow()} Setup dataloader with {self._args.read_threads} workers {torch.__version__}")
-        if self._args.read_threads==0:
-            kwargs={}
-        else:
-            kwargs={'multiprocessing_context':self._args.multiprocessing_context,
-                    'prefetch_factor': prefetch_factor}
+        kwargs = {}
+        # if self._args.read_threads==0:
+        #     kwargs={}
+        # else:
+        #     kwargs={'multiprocessing_context':self._args.multiprocessing_context,
+        #             'prefetch_factor': prefetch_factor}
             # if torch.__version__ != '1.3.1':       
             #     kwargs['persistent_workers'] = True
         
+        # collate_fn = _collate_fn
         batch_size = self.batch_size
-        if batch_size == 1 and self._args.disable_collation:
-            batch_size = None
+        if self._args.disable_collation:
+            if batch_size == 1:
+                batch_size = None
+                # collate_fn = None
+            if batch_size > 1:
+                self.logger.warning(f"Cannot disable collation since batch_size is {batch_size}")
 
-        if batch_size > 1 and self._args.disable_collation:
-            self.logger.warning(f"Cannot disable collation since batch_size is {batch_size}")
+        if self._args.my_rank == 0:
+            self.logger.output(f"Dataloader, workers=%s, persistent_workers=%s, drop_last=False, prefetch_size=%s, pin_memory=%s, batch_size=%s", 
+                               self._args.read_threads, self._args.persistent_workers, self._args.prefetch_size, self._args.pin_memory, batch_size)
 
         if torch.__version__ == '1.3.1':
-            if 'prefetch_factor' in kwargs:
-                del kwargs['prefetch_factor']
+            if self._args.my_rank == 0:
+                self.logger.output(f"Torch v1.3.1 detected")
+            # if 'prefetch_factor' in kwargs:
+            #     del kwargs['prefetch_factor']
             self._dataset = DataLoader(dataset,
                                        batch_size=batch_size,
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
                                        persistent_workers=self._args.persistent_workers,
-                                       drop_last=True,
+                                       drop_last=False,
                                        worker_init_fn=dataset.worker_init, 
+                                       prefetch_factor=self._args.prefetch_size,
+                                       # collate_fn=collate_fn,
                                        **kwargs)
         else: 
             self._dataset = DataLoader(dataset,
@@ -160,8 +179,10 @@ class TorchDataLoader(BaseDataLoader):
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
                                        persistent_workers=self._args.persistent_workers,
-                                       drop_last=True,
+                                       drop_last=False,
                                        worker_init_fn=dataset.worker_init,
+                                       prefetch_factor=self._args.prefetch_size,
+                                       # collate_fn=collate_fn,
                                        **kwargs)
         self.logger.debug(f"{utcnow()} Rank {self._args.my_rank} will read {len(self._dataset) * self.batch_size} files")
 
@@ -176,12 +197,20 @@ class TorchDataLoader(BaseDataLoader):
         total = self._args.training_steps if self.dataset_type is DatasetType.TRAIN else self._args.eval_steps
         self.logger.debug(f"{utcnow()} Rank {self._args.my_rank} should read {total} batches")
         step = 1
-        # TODO: @hariharan-devarajan: change below line when we bump the dftracer version to 
-        #       `dlp.iter(self._dataset, name=self.next.__qualname__)`
+
+        # start = PerfTrace.get_instance().get_time()        
+        # for batch in self._dataset:
         for batch in dlp.iter(self._dataset, name=self.next.__qualname__):
+            # end = PerfTrace.get_instance().get_time()
+            # diff = (end - start) / 1e6
+            # iter_dur = sleep(self._args.iter_time, exec=False)
+            # diff = iter_dur - diff
+            # if diff > 0:
+            #     base_sleep(diff)
             dlp.update(step = step)
             step += 1
             yield batch
+            # start = PerfTrace.get_instance().get_time()
         self.epoch_number += 1
         dlp.update(epoch=self.epoch_number)
 

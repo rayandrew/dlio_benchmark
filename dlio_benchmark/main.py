@@ -26,7 +26,7 @@ import tqdm.auto as tqdm
 from numpy import random
 
 from dlio_benchmark.checkpointing.checkpointing_factory import CheckpointingFactory
-from dlio_benchmark.common.constants import MODULE_DLIO_BENCHMARK
+from dlio_benchmark.common.constants import MODULE_DLIO_BENCHMARK, MODULE_DATA_LOADER
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
@@ -131,6 +131,7 @@ class DLIOBenchmark(object):
             self.epochs = self.args.epochs
             self.batch_size = self.args.batch_size
             self.computation_time = self.args.computation_time
+            self.first_computation_time = self.args.first_computation_time
 
             if self.do_profiling:
                 self.profiler = ProfilerFactory().get_profiler(self.args.profiler)
@@ -302,13 +303,14 @@ class DLIOBenchmark(object):
         # )
 
         self.stats.start_loading()
+        # for batch in dlp_iter.iter(loader.next(), name=loader.next.__qualname__):
         for batch in loader.next():
             self.stats.batch_loaded(epoch, overall_step, block)
-            computation_time = self.args.computation_time
+            computation_time = self.args.computation_time if overall_step > 1 else self.args.first_computation_time
             if (isinstance(computation_time, dict) and len(computation_time) > 0) or (isinstance(computation_time, float) and  computation_time > 0):
                 self.framework.trace_object("Train", overall_step, 1)
             self.stats.start_compute()
-            self.framework.compute(batch, epoch, block_step, self.computation_time)
+            self.framework.compute(batch, epoch, block_step, computation_time)
             self.stats.batch_processed(epoch, overall_step, block)
             # This is the barrier to simulate allreduce. It is required to simulate the actual workloads.
             self.comm.barrier()
@@ -325,14 +327,18 @@ class DLIOBenchmark(object):
             else:
                 block_step += 1
 
+            overall_step += 1
+
             if overall_step > max_steps or ((self.total_training_steps > 0) and (overall_step > self.total_training_steps)):
                 if self.args.my_rank == 0:
                     self.logger.output(f"{utcnow()} Maximum number of steps reached")
                 if (not self.do_checkpoint):
                     self.stats.end_block(epoch, block, block_step - 1)
                 break
+
             # @Ray: need to add this to make the iteration similar
-            overall_step += 1
+            # overall_step += 1
+
             # pbar.update()
             # start a new block here
             if block_step == 1 and block != 1:

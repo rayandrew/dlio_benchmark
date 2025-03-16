@@ -335,7 +335,7 @@ def get_trace_name(output_folder, use_pid=False):
         val = f"-{os.getpid()}"
     return f"{output_folder}/trace-{DLIOMPI.get_instance().rank()}-of-{DLIOMPI.get_instance().size()}{val}.pfw"
 
-def sleep(config):
+def sleep(config, exec=True):
     sleep_time = 0.0
     if isinstance(config, dict) and len(config) > 0:
         if "type" in config:
@@ -358,6 +358,6 @@ def sleep(config):
     elif isinstance(config, (int, float)):
         sleep_time = config
     sleep_time = abs(sleep_time)
-    if sleep_time > 0.0:
+    if sleep_time > 0.0 and exec:
         base_sleep(sleep_time)
     return sleep_time

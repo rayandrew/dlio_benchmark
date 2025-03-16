@@ -36,7 +36,7 @@ class HDF5Generator(DataGenerator):
     def __init__(self):
         super().__init__()
 
-        self.record_element_dtype = self._args.bytes_to_np_dtype(self._args.record_element_bytes)
+        self.record_element_dtype = self._args.bytes_to_np_dtype(self._args.record_element_bytes) if self._args.record_element_type == "" else np.dtype(self._args.record_element_type)
 
         self.record_labels = [0] * self.num_samples
         self.chunks = None
@@ -67,6 +67,8 @@ class HDF5Generator(DataGenerator):
 
         np.random.seed(10)
 
+        rng = np.random.default_rng()
+
         dim = self.get_dimension(self.total_files_to_generate)
         if self._args.num_dataset_per_record > 1:
             dim = [[int(d[0] / self._args.num_dataset_per_record), *d[1:]] for d in dim]
@@ -74,12 +76,22 @@ class HDF5Generator(DataGenerator):
         for i in dlp.iter(range(self.my_rank, int(self.total_files_to_generate), self.comm_size)):
             dim1 = dim[2*i]
             if isinstance(dim1, list):
-                shape = (self.num_samples, *dim1)
-                records = np.random.randint(255, size=(*dim1, self.num_samples), dtype=self.record_element_dtype)
+                if self.num_samples > 1:
+                    shape = (self.num_samples, *dim1)
+                else:
+                    shape = dim1
+                if shape[0] == 1:
+                    shape = shape[1:]
+                # records = np.random.randint(255, size=shape, dtype=self.record_element_dtype)
+                records = rng.random(size=shape, dtype=self.record_element_dtype)
             else:
                 dim2 = dim[2*i+1]
-                shape = (self.num_samples, dim1, dim2)
-                records = np.random.randint(255, size=(dim1, dim2, self.num_samples), dtype=self.record_element_dtype)
+                if self.num_samples > 1:
+                    shape = (self.num_samples, dim1, dim2)
+                else:
+                    shape = (dim1, dim2)
+                records = rng.random(size=shape, dtype=self.record_element_dtype)
+                # records = np.random.randint(255, size=shape, dtype=self.record_element_dtype)
 
             progress(i+1, self.total_files_to_generate, "Generating HDF5 Data")
 

@@ -59,8 +59,6 @@ class ConfigArguments:
     record_length: int = 64 * 1024
     record_length_stdev: int = 0
     record_length_resize: int = 0
-    record_dims: ClassVar[List[int]] = []
-    record_element_bytes: int = 1
     num_files_train: int = 8
     num_samples_per_file: int = 1
     batch_size: int = 1
@@ -143,10 +141,23 @@ class ConfigArguments:
     ##########################################
     # NEW API
     ##########################################
-    ## reader
+    ## dataset
+    record_dims: ClassVar[List[int]] = []
+    record_element_bytes: int = 4
+    record_element_type: str = ""
     files_per_record: int = None
 
+    ## train
+    first_computation_time: ClassVar[Dict[str, Any]] = {}
+
+    ## reader
+    files_per_read: int = 1
+    files_interval_pool: ClassVar[List[int]] = None
+    iter_time: ClassVar[Dict[str, Any]] = {}
+    # files_interval_randomized: bool = True
+
     ## hdf5
+    original_num_dataset_per_record: int = 1
     num_dataset_per_record: int = 1
     chunk_dims: ClassVar[List[int]] = []
     random_access_dataset: bool = False
@@ -565,6 +576,9 @@ def LoadConfig(args, config):
         ##########################################
         if 'record_element_bytes' in config['dataset']:
             args.record_element_bytes = config['dataset']['record_element_bytes']
+        if 'record_element_type' in config['dataset']:
+            args.record_element_type = config['dataset']['record_element_type']
+            args.record_element_bytes = np.dtype(args.record_element_type).itemsize
         if 'record_dims' in config['dataset']:
             args.record_dims = list(config['dataset']['record_dims'])
             # recalculate args.record_length
@@ -578,11 +592,18 @@ def LoadConfig(args, config):
         if 'hdf5' in config['dataset']:
             if 'chunk_dims' in config['dataset']['hdf5']:
                 args.chunk_dims = config['dataset']['hdf5']['chunk_dims']
-            if 'num_dataset_per_record' in config['dataset']['hdf5']:
-                args.num_dataset_per_record = config['dataset']['hdf5']['num_dataset_per_record']
-                if len(args.record_dims) > 0:
-                    if args.record_dims[0] % args.num_dataset_per_record != 0:
-                        raise ValueError("hdf5.num_dataset_per_record should be divisible by record_dims[0]")
+            if 'original_num_dataset_per_record' in config['dataset']['hdf5']:
+                args.original_num_dataset_per_record = config['dataset']['hdf5']['original_num_dataset_per_record']
+                args.num_dataset_per_record = args.original_num_dataset_per_record
+                if 'num_dataset_per_record' in config['dataset']['hdf5']:
+                    args.num_dataset_per_record = config['dataset']['hdf5']['num_dataset_per_record']
+            else:
+                if 'num_dataset_per_record' in config['dataset']['hdf5']:
+                    args.num_dataset_per_record = config['dataset']['hdf5']['num_dataset_per_record']
+                    args.original_num_dataset_per_record = args.num_dataset_per_record
+            if len(args.record_dims) > 0:
+                if args.record_dims[0] % args.num_dataset_per_record != 0:
+                    raise ValueError("hdf5.num_dataset_per_record should be divisible by record_dims[0]")
 
     # data reader
     reader = None
@@ -625,7 +646,7 @@ def LoadConfig(args, config):
             args.read_type = reader['read_type']
         if 'transfer_size' in reader:
             args.transfer_size = reader['transfer_size']
-        
+         
         args.preprocess_time = {}
         if 'preprocess_time' in reader:
             preprocess_time = {}
@@ -647,6 +668,30 @@ def LoadConfig(args, config):
         if 'disable_collation' in reader:
             args.disable_collation = reader['disable_collation']
 
+
+        ##########################################
+        # new API
+        ##########################################
+        if 'files_per_read' in reader:
+            args.files_per_read = reader['files_per_read']
+        if 'files_interval_pool' in reader:
+            args.files_interval_pool = list(reader['files_interval_pool'])
+        if 'transformed_sample' in reader:
+            args.transformed_sample = list(reader['transformed_sample'])
+        if 'iter_time' in reader:
+            iter_time = {}
+            if isinstance(reader['iter_time'], dict):
+                iter_time = reader['iter_time']
+            elif isinstance(reader['iter_time'], (int, float)):
+                iter_time["mean"] = reader['iter_time']
+            elif isinstance(reader['iter_time'], DictConfig):
+                iter_time = OmegaConf.to_container(reader['iter_time'])
+            else:
+                args.iter_time = reader['iter_time']
+            args.iter_time = iter_time if iter_time is not None else {}
+        # if 'files_interval_randomized' in reader:
+        #     args.files_interval_randomized = reader['files_interval_randomized']
+
     # training relevant setting
     if 'train' in config:
         if 'epochs' in config['train']:
@@ -667,10 +712,24 @@ def LoadConfig(args, config):
             else:
                 args.computation_time = config['train']['computation_time']
             args.computation_time = computation_time if computation_time is not None else {}
+            args.first_computation_time = args.computation_time
         if 'computation_time_stdev' in config['train']:
             args.computation_time["stdev"] = config['train']['computation_time_stdev']
         if 'seed' in config['train']:
             args.seed = config['train']['seed']
+
+        # first computation step time
+        if 'first_computation_time' in config['train']:
+            first_computation_time = {}
+            if isinstance(config['train']['computation_time'], dict):
+                first_computation_time = config['train']['first_computation_time']
+            elif isinstance(config['train']['computation_time'], (int, float)):
+                first_computation_time["mean"] = config['train']['first_computation_time']
+            elif isinstance(config['train']['computation_time'], DictConfig):
+                first_computation_time = OmegaConf.to_container(config['train']['first_computation_time'])
+            else:
+                args.first_computation_time = config['train']['first_computation_time']
+            args.first_computation_time = first_computation_time if first_computation_time is not None else {}
 
     if 'evaluation' in config:
         args.eval_time = {}
