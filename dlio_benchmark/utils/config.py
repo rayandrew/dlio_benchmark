@@ -165,6 +165,12 @@ class ConfigArguments:
     ##########################################
 
     # derived fields
+    ##########################################
+    # NEW API
+    ##########################################
+    original_num_files_train: int = 8
+    original_num_files_eval: int = 0
+
     required_samples: int = 1
     total_samples_eval: int = 1
     total_samples_train: int = 1
@@ -279,12 +285,12 @@ class ConfigArguments:
         if (self.framework == FrameworkType.TENSORFLOW and self.data_loader == DataLoaderType.PYTORCH) or (
                 self.framework == FrameworkType.PYTORCH and self.data_loader == DataLoaderType.TENSORFLOW):
             raise Exception("Imcompatible between framework and data_loader setup.")
-        if len(self.file_list_train) != self.num_files_train:
-            raise Exception(
-                f"Expected {self.num_files_train} training files but {len(self.file_list_train)} found. Ensure data was generated correctly.")
-        if len(self.file_list_eval) != self.num_files_eval:
-            raise Exception(
-                f"Expected {self.num_files_eval} evaluation files but {len(self.file_list_eval)} found. Ensure data was generated correctly.")
+        # if len(self.file_list_train) != self.num_files_train:
+        #     raise Exception(
+        #         f"Expected {self.num_files_train} training files but {len(self.file_list_train)} found. Ensure data was generated correctly.")
+        # if len(self.file_list_eval) != self.num_files_eval:
+        #     raise Exception(
+        #         f"Expected {self.num_files_eval} evaluation files but {len(self.file_list_eval)} found. Ensure data was generated correctly.")
         if self.data_loader_classname is not None and self.data_loader_sampler is None:
             raise Exception(
                 f"For custom data loaders workload.reader.data_loader_sampler needs to be defined as iter or index.")
@@ -349,16 +355,16 @@ class ConfigArguments:
 
         if (file_list_train != None and file_list_eval != None):
             if self.transformed_sample is not None and len(self.transformed_sample) > 0:
-                self.logger.output(f"Using transformed sample size {self.transformed_sample}")
+                self.logger.debug(f"Using transformed sample size {self.transformed_sample}")
                 self.resized_image = np.random.randint(255, size=self.transformed_sample, dtype=np.uint8)
             else:
                 self.resized_image = np.random.randint(255, size=(self.max_dimension, self.max_dimension), dtype=np.uint8)
             self.file_list_train = file_list_train
             self.file_list_eval = file_list_eval
-            self.num_files_eval = len(file_list_eval)
-            self.num_files_train = len(file_list_train)
-            self.total_samples_train = self.num_samples_per_file * len(self.file_list_train)
-            self.total_samples_eval = self.num_samples_per_file * len(self.file_list_eval)
+            self.original_num_files_eval = len(file_list_eval)
+            self.original_num_files_train = len(file_list_train)
+            self.total_samples_train = self.num_samples_per_file * self.num_files_train
+            self.total_samples_eval = self.num_samples_per_file * self.num_files_eval
             # self.train_sample_index_sum = self.total_samples_train * (self.total_samples_train - 1) // 2
             # self.eval_sample_index_sum = self.total_samples_eval * (self.total_samples_eval - 1) // 2
             self.train_sample_index_sum = self.calc_samples_sum(self.total_samples_train)

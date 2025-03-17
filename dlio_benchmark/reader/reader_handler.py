@@ -86,13 +86,13 @@ class FormatReader(ABC):
                     for j in range(interval):
                         next_idx = idx + j
                         next_filename = os.path.join(parent_dir, 
-                                                     "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(next_idx, len(str(self._args.num_files_train))), self._args.num_files_train, self._args.format))
+                                                     "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(next_idx, len(str(self._args.original_num_files_train))), self._args.original_num_files_train, self._args.format))
                         if os.path.exists(next_filename):
                             max_step_forward = j
                 
                     remaining = interval - max_step_forward
-                    next_filename = os.path.join(parent_dir, 
-                                                 "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(remaining - 1, len(str(self._args.num_files_train))), self._args.num_files_train, self._args.format))
+                    next_filename = os.path.join(parent_dir,
+                                                 "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(remaining - 1, len(str(self._args.original_num_files_train))), self._args.original_num_files_train, self._args.format))
                     paths.append(next_filename)
             else:
                 for file in range(self._args.files_per_read - 1):
@@ -108,8 +108,8 @@ class FormatReader(ABC):
                     next_idx = (idx + interval) % self._args.num_files_train
                     parent_dir = os.path.dirname(filename)
                     next_filename = os.path.join(parent_dir, 
-                                                 "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(next_idx, len(str(self._args.num_files_train))), self._args.num_files_train, self._args.format))
-                
+                                                 "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(next_idx, len(str(self._args.original_num_files_train))), self._args.original_num_files_train, self._args.format))
+
                     paths.append(next_filename)
 
 
