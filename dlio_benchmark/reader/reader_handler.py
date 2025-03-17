@@ -69,47 +69,49 @@ class FormatReader(ABC):
         if self._args.files_per_read > 1:
             from dlio_benchmark.utils.utility import add_padding
 
-            # for file in range(self._args.files_per_read - 1):
-            #     interval = 1
-            #     interval_pool = self._args.files_interval_pool
-            #     if interval_pool:
-            #         if isinstance(interval_pool, list):
-            #             interval = np.random.choice(interval_pool)
-            #         else:
-            #             interval = interval_pool
-            # 
-            #     idx = int(os.path.basename(filename).split('.')[0].split('_')[1])
-            #     next_idx = (idx + interval) % self._args.num_files_train
-            #     parent_dir = os.path.dirname(filename)
-            #     next_filename = os.path.join(parent_dir, 
-            #                                  "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(next_idx, len(str(self._args.num_files_train))), self._args.num_files_train, self._args.format))
-            # 
-            #     paths.append(next_filename)
-
-            # FOR STORMER ONLY
-            parent_dir = os.path.dirname(filename)
-            for file in range(self._args.files_per_read - 1):
-                interval = 1
-                interval_pool = self._args.files_interval_pool
-                if interval_pool:
-                    if isinstance(interval_pool, list):
-                        interval = np.random.choice(interval_pool)
-                    else:
-                        interval = interval_pool
-
-                idx = int(os.path.basename(filename).split('.')[0].split('_')[1])
-                max_step_forward = 0
-                for i in range(interval):
-                    next_idx = idx + i
+            if self._args.stormer_reader_pattern:
+                # FOR STORMER ONLY
+                parent_dir = os.path.dirname(filename)
+                for i in range(self._args.files_per_read - 1):
+                    interval = 1
+                    interval_pool = self._args.files_interval_pool
+                    if interval_pool:
+                        if isinstance(interval_pool, list):
+                            interval = np.random.choice(interval_pool)
+                        else:
+                            interval = interval_pool
+                
+                    idx = int(os.path.basename(filename).split('.')[0].split('_')[1])
+                    max_step_forward = 0
+                    for j in range(interval):
+                        next_idx = idx + j
+                        next_filename = os.path.join(parent_dir, 
+                                                     "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(next_idx, len(str(self._args.num_files_train))), self._args.num_files_train, self._args.format))
+                        if os.path.exists(next_filename):
+                            max_step_forward = j
+                
+                    remaining = interval - max_step_forward
+                    next_filename = os.path.join(parent_dir, 
+                                                 "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(remaining - 1, len(str(self._args.num_files_train))), self._args.num_files_train, self._args.format))
+                    paths.append(next_filename)
+            else:
+                for file in range(self._args.files_per_read - 1):
+                    interval = 1
+                    interval_pool = self._args.files_interval_pool
+                    if interval_pool:
+                        if isinstance(interval_pool, list):
+                            interval = np.random.choice(interval_pool)
+                        else:
+                            interval = interval_pool
+                
+                    idx = int(os.path.basename(filename).split('.')[0].split('_')[1])
+                    next_idx = (idx + interval) % self._args.num_files_train
+                    parent_dir = os.path.dirname(filename)
                     next_filename = os.path.join(parent_dir, 
                                                  "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(next_idx, len(str(self._args.num_files_train))), self._args.num_files_train, self._args.format))
-                    if os.path.exists(next_filename):
-                        max_Step_forward = i
+                
+                    paths.append(next_filename)
 
-                remaining = interval - max_step_forward
-                next_filename = os.path.join(parent_dir, 
-                                             "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(remaining-1, len(str(self._args.num_files_train))), self._args.num_files_train, self._args.format))
-                paths.append(next_filename)
 
         if self._args.files_per_record is not None and self._args.files_per_record > 0:
             for p in paths:

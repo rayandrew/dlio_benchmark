@@ -336,7 +336,7 @@ class DLIOBenchmark(object):
                     self.stats.end_block(epoch, block, block_step - 1)
                 break
 
-            # @Ray: need to add this to make the iteration similar
+            # @Ray: need to add this to make the iteration similar (not needed for now as we adjust total training steps manually)
             # overall_step += 1
 
             # pbar.update()

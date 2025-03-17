@@ -197,20 +197,10 @@ class TorchDataLoader(BaseDataLoader):
         total = self._args.training_steps if self.dataset_type is DatasetType.TRAIN else self._args.eval_steps
         self.logger.debug(f"{utcnow()} Rank {self._args.my_rank} should read {total} batches")
         step = 1
-
-        # start = PerfTrace.get_instance().get_time()        
-        # for batch in self._dataset:
         for batch in dlp.iter(self._dataset, name=self.next.__qualname__):
-            # end = PerfTrace.get_instance().get_time()
-            # diff = (end - start) / 1e6
-            # iter_dur = sleep(self._args.iter_time, exec=False)
-            # diff = iter_dur - diff
-            # if diff > 0:
-            #     base_sleep(diff)
             dlp.update(step = step)
             step += 1
             yield batch
-            # start = PerfTrace.get_instance().get_time()
         self.epoch_number += 1
         dlp.update(epoch=self.epoch_number)
 

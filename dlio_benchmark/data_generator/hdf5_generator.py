@@ -76,12 +76,14 @@ class HDF5Generator(DataGenerator):
         for i in dlp.iter(range(self.my_rank, int(self.total_files_to_generate), self.comm_size)):
             dim1 = dim[2*i]
             if isinstance(dim1, list):
+                if dim1[0] == 1:
+                    dim1 = dim1[1:]
                 if self.num_samples > 1:
                     shape = (self.num_samples, *dim1)
                 else:
-                    shape = dim1
-                if shape[0] == 1:
-                    shape = shape[1:]
+                    shape = (1, *dim1)
+                # if shape[0] == 1:
+                #     shape = shape[1:]
                 # records = np.random.randint(255, size=shape, dtype=self.record_element_dtype)
                 records = rng.random(size=shape, dtype=self.record_element_dtype)
             else:
@@ -89,7 +91,7 @@ class HDF5Generator(DataGenerator):
                 if self.num_samples > 1:
                     shape = (self.num_samples, dim1, dim2)
                 else:
-                    shape = (dim1, dim2)
+                    shape = (1, dim1, dim2)
                 records = rng.random(size=shape, dtype=self.record_element_dtype)
                 # records = np.random.randint(255, size=shape, dtype=self.record_element_dtype)
 

@@ -153,7 +153,8 @@ class ConfigArguments:
     ## reader
     files_per_read: int = 1
     files_interval_pool: ClassVar[List[int]] = None
-    iter_time: ClassVar[Dict[str, Any]] = {}
+    # iter_time: ClassVar[Dict[str, Any]] = {}
+    stormer_reader_pattern: bool = False
     # files_interval_randomized: bool = True
 
     ## hdf5
@@ -678,17 +679,20 @@ def LoadConfig(args, config):
             args.files_interval_pool = list(reader['files_interval_pool'])
         if 'transformed_sample' in reader:
             args.transformed_sample = list(reader['transformed_sample'])
-        if 'iter_time' in reader:
-            iter_time = {}
-            if isinstance(reader['iter_time'], dict):
-                iter_time = reader['iter_time']
-            elif isinstance(reader['iter_time'], (int, float)):
-                iter_time["mean"] = reader['iter_time']
-            elif isinstance(reader['iter_time'], DictConfig):
-                iter_time = OmegaConf.to_container(reader['iter_time'])
-            else:
-                args.iter_time = reader['iter_time']
-            args.iter_time = iter_time if iter_time is not None else {}
+        # if 'iter_time' in reader:
+        #     iter_time = {}
+        #     if isinstance(reader['iter_time'], dict):
+        #         iter_time = reader['iter_time']
+        #     elif isinstance(reader['iter_time'], (int, float)):
+        #         iter_time["mean"] = reader['iter_time']
+        #     elif isinstance(reader['iter_time'], DictConfig):
+        #         iter_time = OmegaConf.to_container(reader['iter_time'])
+        #     else:
+        #         args.iter_time = reader['iter_time']
+        #     args.iter_time = iter_time if iter_time is not None else {}
+
+        if 'stormer_reader_pattern' in reader:
+            args.stormer_reader_pattern = reader['stormer_reader_pattern']
         # if 'files_interval_randomized' in reader:
         #     args.files_interval_randomized = reader['files_interval_randomized']
 
