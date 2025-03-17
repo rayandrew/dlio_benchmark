@@ -226,11 +226,11 @@ class DLIOBenchmark(object):
             if (self.num_files_train < len(file_list_train)):
                 self.logger.warning(
                     f"Number of files for training in {os.path.join(self.args.data_folder, f'{DatasetType.TRAIN}')} ({len(file_list_train)}) is more than requested ({self.num_files_train}). A subset of files will be used ")
-                file_list_train = file_list_train[:self.num_files_train]
+                # file_list_train = file_list_train[:self.num_files_train]
             if (self.num_files_eval < len(file_list_eval)):
                 self.logger.warning(
                     f"Number of files for evaluation in {os.path.join(self.args.data_folder, f'{DatasetType.VALID}')} ({len(file_list_eval)}) is more than requested ({self.num_files_eval}). A subset of files will be used ")
-                file_list_eval = file_list_eval[:self.num_files_eval]
+                # file_list_eval = file_list_eval[:self.num_files_eval]
         self.args.derive_configurations(file_list_train, file_list_eval)
         self.args.validate()
         self.checkpointing_mechanism = CheckpointingFactory().get_mechanism(self.args.checkpoint_mechanism)
@@ -327,7 +327,7 @@ class DLIOBenchmark(object):
             else:
                 block_step += 1
 
-            overall_step += 1
+            # overall_step += 1
 
             if overall_step > max_steps or ((self.total_training_steps > 0) and (overall_step > self.total_training_steps)):
                 if self.args.my_rank == 0:
@@ -336,8 +336,8 @@ class DLIOBenchmark(object):
                     self.stats.end_block(epoch, block, block_step - 1)
                 break
 
-            # @Ray: need to add this to make the iteration similar (not needed for now as we adjust total training steps manually)
-            # overall_step += 1
+            # @Ray: need to add this to make the iteration similar
+            overall_step += 1
 
             # pbar.update()
             # start a new block here
@@ -389,7 +389,7 @@ class DLIOBenchmark(object):
             self.framework.get_loader(dataset_type=DatasetType.TRAIN).read()
             if self.do_eval:
                 self.framework.get_loader(dataset_type=DatasetType.VALID).read()
-            for epoch in range(1, self.epochs + 1):
+            for epoch in dlp.iter(range(1, self.epochs + 1), name="epoch"):
                 self.next_checkpoint_step = self.steps_between_checkpoints
                 self.stats.start_train(epoch)
                 steps = self._train(epoch)
