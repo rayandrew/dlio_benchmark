@@ -151,17 +151,10 @@ class ConfigArguments:
     first_computation_time: ClassVar[Dict[str, Any]] = {}
 
     ## reader
-    files_per_read: int = 1
-    files_interval_pool: ClassVar[List[int]] = None
-    # iter_time: ClassVar[Dict[str, Any]] = {}
-    stormer_reader_pattern: bool = False
-    # files_interval_randomized: bool = True
 
     ## hdf5
-    original_num_dataset_per_record: int = 1
     num_dataset_per_record: int = 1
     chunk_dims: ClassVar[List[int]] = []
-    random_access_dataset: bool = False
     ##########################################
 
     # derived fields
@@ -379,36 +372,42 @@ class ConfigArguments:
                 self.data_loader_sampler = DataLoaderSampler.ITERATIVE
             elif self.data_loader in [DataLoaderType.PYTORCH, DataLoaderType.DALI]:
                 self.data_loader_sampler = DataLoaderSampler.INDEX
-        if self.data_loader_classname is not None:
-            from dlio_benchmark.data_loader.base_data_loader import BaseDataLoader
-            classname = self.data_loader_classname.split(".")[-1]
-            module = importlib.import_module(".".join(self.data_loader_classname.split(".")[:-1]))
-            for class_name, obj in inspect.getmembers(module):
-                if class_name == classname and issubclass(obj, BaseDataLoader):
-                    if DLIOMPI.get_instance().rank() == 0:
-                        self.logger.info(f"Discovered custom data loader {class_name}")
-                    self.data_loader_class = obj
-                    break
-        if self.checkpoint_mechanism_classname is not None:
-            from dlio_benchmark.checkpointing.base_checkpointing import BaseCheckpointing
-            classname = self.checkpoint_mechanism_classname.split(".")[-1]
-            module = importlib.import_module(".".join(self.checkpoint_mechanism_classname.split(".")[:-1]))
-            for class_name, obj in inspect.getmembers(module):
-                if class_name == classname and issubclass(obj, BaseCheckpointing):
-                    if DLIOMPI.get_instance().rank() == 0:
-                        self.logger.info(f"Discovered custom checkpointing mechanism {class_name}")
-                    self.checkpoint_mechanism_class = obj
-                    break
-        if self.reader_classname is not None:
-            from dlio_benchmark.reader.reader_handler import FormatReader
-            classname = self.reader_classname.split(".")[-1]
-            module = importlib.import_module(".".join(self.reader_classname.split(".")[:-1]))
-            for class_name, obj in inspect.getmembers(module):
-                if class_name == classname and issubclass(obj, FormatReader):
-                    if DLIOMPI.get_instance().rank() == 0:
-                        self.logger.info(f"Discovered custom data reader {class_name}")
-                    self.reader_class = obj
-                    break
+
+        # @Note: move this API to factory because it is not pickleable
+        # if self.data_loader_classname is not None:
+        #     from dlio_benchmark.data_loader.base_data_loader import BaseDataLoader
+        #     classname = self.data_loader_classname.split(".")[-1]
+        #     module = importlib.import_module(".".join(self.data_loader_classname.split(".")[:-1]))
+        #     for class_name, obj in inspect.getmembers(module):
+        #         if class_name == classname and issubclass(obj, BaseDataLoader):
+        #             if DLIOMPI.get_instance().rank() == 0:
+        #                 self.logger.info(f"Discovered custom data loader {class_name}")
+        #             self.data_loader_class = obj
+        #             break
+
+        # @Note: move this API to factory because it is not pickleable
+        # if self.checkpoint_mechanism_classname is not None:
+        #     from dlio_benchmark.checkpointing.base_checkpointing import BaseCheckpointing
+        #     classname = self.checkpoint_mechanism_classname.split(".")[-1]
+        #     module = importlib.import_module(".".join(self.checkpoint_mechanism_classname.split(".")[:-1]))
+        #     for class_name, obj in inspect.getmembers(module):
+        #         if class_name == classname and issubclass(obj, BaseCheckpointing):
+        #             if DLIOMPI.get_instance().rank() == 0:
+        #                 self.logger.info(f"Discovered custom checkpointing mechanism {class_name}")
+        #             self.checkpoint_mechanism_class = obj
+        #             break
+
+        # @Note: move this API to factory because it is not pickleable
+        # if self.reader_classname is not None:
+        #     from dlio_benchmark.reader.reader_handler import FormatReader
+        #     classname = self.reader_classname.split(".")[-1]
+        #     module = importlib.import_module(".".join(self.reader_classname.split(".")[:-1]))
+        #     for class_name, obj in inspect.getmembers(module):
+        #         if class_name == classname and issubclass(obj, FormatReader):
+        #             if DLIOMPI.get_instance().rank() == 0:
+        #                 self.logger.output(f"Discovered custom data reader {class_name}")
+        #             self.reader_class = obj
+        #             break
         self.train_file_map = {self.my_rank : {}}
         self.val_file_map = {self.my_rank : {}}
         self.train_global_index_map = {}
@@ -507,7 +506,7 @@ class ConfigArguments:
                     np.random.seed(self.seed)
                 np.random.shuffle(self.file_list_train) 
                 np.random.shuffle(self.file_list_eval)
-        # self.logger.output("here aaaaa")
+
         if self.data_loader_sampler == DataLoaderSampler.ITERATIVE:
             self.train_file_map, local_train_sample_sum = self.build_sample_map_iter(self.file_list_train, self.total_samples_train,
                                                              epoch_number)
@@ -590,24 +589,18 @@ def LoadConfig(args, config):
             args.record_dims = list(config['dataset']['record_dims'])
             # recalculate args.record_length
             args.record_length = np.prod(args.record_dims) * args.record_element_bytes
-
         if 'files_per_record' in config['dataset']:
             args.files_per_record = config['dataset']['files_per_record']
 
+        ##########################################
         # new API
+        ##########################################
         # hdf5 only config
         if 'hdf5' in config['dataset']:
             if 'chunk_dims' in config['dataset']['hdf5']:
-                args.chunk_dims = config['dataset']['hdf5']['chunk_dims']
-            if 'original_num_dataset_per_record' in config['dataset']['hdf5']:
-                args.original_num_dataset_per_record = config['dataset']['hdf5']['original_num_dataset_per_record']
-                args.num_dataset_per_record = args.original_num_dataset_per_record
-                if 'num_dataset_per_record' in config['dataset']['hdf5']:
-                    args.num_dataset_per_record = config['dataset']['hdf5']['num_dataset_per_record']
-            else:
-                if 'num_dataset_per_record' in config['dataset']['hdf5']:
-                    args.num_dataset_per_record = config['dataset']['hdf5']['num_dataset_per_record']
-                    args.original_num_dataset_per_record = args.num_dataset_per_record
+                args.chunk_dims = tuple(config['dataset']['hdf5']['chunk_dims'])
+            if 'num_dataset_per_record' in config['dataset']['hdf5']:
+                args.num_dataset_per_record = config['dataset']['hdf5']['num_dataset_per_record']
             if len(args.record_dims) > 0:
                 if args.record_dims[0] % args.num_dataset_per_record != 0:
                     raise ValueError("hdf5.num_dataset_per_record should be divisible by record_dims[0]")
@@ -679,28 +672,8 @@ def LoadConfig(args, config):
         ##########################################
         # new API
         ##########################################
-        if 'files_per_read' in reader:
-            args.files_per_read = reader['files_per_read']
-        if 'files_interval_pool' in reader:
-            args.files_interval_pool = list(reader['files_interval_pool'])
         if 'transformed_sample' in reader:
             args.transformed_sample = list(reader['transformed_sample'])
-        # if 'iter_time' in reader:
-        #     iter_time = {}
-        #     if isinstance(reader['iter_time'], dict):
-        #         iter_time = reader['iter_time']
-        #     elif isinstance(reader['iter_time'], (int, float)):
-        #         iter_time["mean"] = reader['iter_time']
-        #     elif isinstance(reader['iter_time'], DictConfig):
-        #         iter_time = OmegaConf.to_container(reader['iter_time'])
-        #     else:
-        #         args.iter_time = reader['iter_time']
-        #     args.iter_time = iter_time if iter_time is not None else {}
-
-        if 'stormer_reader_pattern' in reader:
-            args.stormer_reader_pattern = reader['stormer_reader_pattern']
-        # if 'files_interval_randomized' in reader:
-        #     args.files_interval_randomized = reader['files_interval_randomized']
 
     # training relevant setting
     if 'train' in config:

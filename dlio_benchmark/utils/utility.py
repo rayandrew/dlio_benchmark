@@ -361,3 +361,18 @@ def sleep(config, exec=True):
     if sleep_time > 0.0 and exec:
         base_sleep(sleep_time)
     return sleep_time
+
+def discover_cls_fqn(fqn, base_class=None):
+    import importlib
+
+    classname = fqn.split(".")[-1]
+    module = importlib.import_module(".".join(fqn.split(".")[:-1]))
+    for class_name, obj in inspect.getmembers(module):
+        found = class_name == classname
+        if base_class:
+            found = found and issubclass(obj, base_class)
+
+        if found:
+            return obj
+
+    return None

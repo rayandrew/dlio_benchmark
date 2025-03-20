@@ -14,6 +14,7 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+import inspect
 import logging
 from dlio_benchmark.utils.utility import utcnow, DLIOMPI
 
@@ -21,7 +22,6 @@ from dlio_benchmark.utils.config import ConfigArguments
 
 from dlio_benchmark.common.enumerations import FormatType, DataLoaderType
 from dlio_benchmark.common.error_code import ErrorCodes
-
 
 class ReaderFactory(object):
     def __init__(self):
@@ -34,10 +34,17 @@ class ReaderFactory(object):
         """
 
         _args = ConfigArguments.get_instance()
-        if _args.reader_class is not None:
-            if DLIOMPI.get_instance().rank() == 0:
-                self.logger.info(f"{utcnow()} Running DLIO with custom data loader class {_args.reader_class.__name__}")
-            return _args.reader_class(dataset_type, thread_index, epoch_number)
+        if _args.reader_classname is not None:
+            from dlio_benchmark.utils.utility import discover_cls_fqn
+            from dlio_benchmark.reader.reader_handler import FormatReader
+            cls = discover_cls_fqn(_args.reader_classname, base_class=FormatReader)
+            if cls:
+                if DLIOMPI.get_instance().rank() == 0:
+                    _args.logger.info(f"{utcnow()} Running DLIO with custom reader class {cls.__name__}")
+
+                return cls(dataset_type, thread_index, epoch_number)
+
+            raise Exception(f"Cannot find custom reader class at {_args.reader_classname}")
         elif type == FormatType.HDF5:
             from dlio_benchmark.reader.hdf5_reader import HDF5Reader
             return HDF5Reader(dataset_type, thread_index, epoch_number)

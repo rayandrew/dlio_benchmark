@@ -29,11 +29,18 @@ class CheckpointingFactory(object):
     @staticmethod
     def get_mechanism(checkpoint_mechanism_type):
         _args = ConfigArguments.get_instance()
-        if _args.checkpoint_mechanism_class is not None:
-            if DLIOMPI.get_instance().rank() == 0:
-                _args.logger.info(f"{utcnow()} Running DLIO with custom checkpointing mechanism "
-                             f"class {_args.checkpoint_mechanism_class.__name__}")
-            return _args.checkpoint_mechanism_class.get_instance()
+        if _args.checkpoint_mechanism_classname is not None:
+            from dlio_benchmark.utils.utility import discover_cls_fqn
+            from dlio_benchmark.checkpointing.base_checkpointing import BaseCheckpointing
+            cls = discover_cls_fqn(_args.checkpoint_mechanism_classname, base_class=BaseCheckpointing)
+
+            if cls:
+                if DLIOMPI.get_instance().rank() == 0:
+                    _args.logger.info(f"{utcnow()} Running DLIO with custom checkpointing mechanism "
+                                      f"class {cls.__name__}")
+                return cls.get_instance()
+
+            raise Exception(f"Cannot find custom checkpointing mechanism at {_args.checkpoint_mechanism_classname}")
         elif checkpoint_mechanism_type == CheckpointMechanismType.TF_SAVE:
             from dlio_benchmark.checkpointing.tf_checkpointing import TFCheckpointing
             return TFCheckpointing.get_instance()

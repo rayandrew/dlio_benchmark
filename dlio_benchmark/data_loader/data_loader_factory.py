@@ -22,7 +22,6 @@ from dlio_benchmark.utils.utility import utcnow, DLIOMPI
 from dlio_benchmark.common.enumerations import DataLoaderType
 from dlio_benchmark.common.error_code import ErrorCodes
 
-
 class DataLoaderFactory(object):
     def __init__(self):
         pass
@@ -33,10 +32,18 @@ class DataLoaderFactory(object):
         This function set the data reader based on the data format and the data loader specified.
         """
         _args = ConfigArguments.get_instance()
-        if _args.data_loader_class is not None:
-            if DLIOMPI.get_instance().rank() == 0:
-                _args.logger.info(f"{utcnow()} Running DLIO with custom data loader class {_args.data_loader_class.__name__}")
-            return _args.data_loader_class(format_type, dataset_type, epoch)
+        if _args.data_loader_classname is not None:
+            from dlio_benchmark.utils.utility import discover_cls_fqn
+            from dlio_benchmark.data_loader.base_data_loader import BaseDataLoader
+            cls = discover_cls_fqn(_args.data_loader_classname, base_class=BaseDataLoader)
+
+            if cls:
+                if DLIOMPI.get_instance().rank() == 0:
+                    _args.logger.info(f"{utcnow()} Running DLIO with custom data loader class {cls.__name__}")
+
+                return cls(format_type, dataset_type, epoch)
+            else:
+                raise Exception(f"Cannot find custom data loader class at {_args.data_loader_classname}")
         elif type == DataLoaderType.PYTORCH:
             from dlio_benchmark.data_loader.torch_data_loader import TorchDataLoader
             return TorchDataLoader(format_type, dataset_type, epoch)
