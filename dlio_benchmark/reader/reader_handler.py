@@ -1,5 +1,5 @@
 """
-   Copyright (c) 2024, UChicago Argonne, LLC
+   Copyright (c) 2025, UChicago Argonne, LLC
    All Rights Reserved
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,13 +44,13 @@ class FormatReader(ABC):
             f"Loading {self.__class__.__qualname__} reader on thread {self.thread_index} from rank {self._args.my_rank}")
         self.dataset_type = dataset_type
         self.open_file_map = {}
+
         if FormatReader.read_images is None:
             FormatReader.read_images = 0
         self.step = 1
         self.image_idx = 0
         self._file_list = self._args.file_list_train if self.dataset_type is DatasetType.TRAIN else self._args.file_list_eval 
         self.batch_size = self._args.batch_size if self.dataset_type is DatasetType.TRAIN else self._args.batch_size_eval
-        self.storage = StorageFactory().get_storage(self._args.storage_type, self._args.storage_root, self._args.framework)
         if dataset_type is DatasetType.TRAIN:
             self.global_index_map = self._args.train_global_index_map
             self.file_map = self._args.train_file_map
@@ -63,71 +63,9 @@ class FormatReader(ABC):
         sleep(self._args.preprocess_time)
         return a
 
-    def get_filenames(self, filename):
-        filenames: list[str] = []
-        paths: list[str] = [filename]
-        if self._args.files_per_read > 1:
-            from dlio_benchmark.utils.utility import add_padding
-
-            if self._args.stormer_reader_pattern:
-                # FOR STORMER ONLY
-                parent_dir = os.path.dirname(filename)
-                for i in range(self._args.files_per_read - 1):
-                    interval = 1
-                    interval_pool = self._args.files_interval_pool
-                    if interval_pool:
-                        if isinstance(interval_pool, list):
-                            interval = np.random.choice(interval_pool)
-                        else:
-                            interval = interval_pool
-                
-                    idx = int(os.path.basename(filename).split('.')[0].split('_')[1])
-                    max_step_forward = 0
-                    for j in range(interval):
-                        next_idx = idx + j
-                        next_filename = os.path.join(parent_dir, 
-                                                     "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(next_idx, len(str(self._args.original_num_files_train))), self._args.original_num_files_train, self._args.format))
-                        if os.path.exists(next_filename):
-                            max_step_forward = j
-                
-                    remaining = interval - max_step_forward
-                    next_filename = os.path.join(parent_dir,
-                                                 "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(remaining - 1, len(str(self._args.original_num_files_train))), self._args.original_num_files_train, self._args.format))
-                    paths.append(next_filename)
-            else:
-                for file in range(self._args.files_per_read - 1):
-                    interval = 1
-                    interval_pool = self._args.files_interval_pool
-                    if interval_pool:
-                        if isinstance(interval_pool, list):
-                            interval = np.random.choice(interval_pool)
-                        else:
-                            interval = interval_pool
-                
-                    idx = int(os.path.basename(filename).split('.')[0].split('_')[1])
-                    next_idx = (idx + interval) % self._args.num_files_train
-                    parent_dir = os.path.dirname(filename)
-                    next_filename = os.path.join(parent_dir, 
-                                                 "{}_{}_of_{}.{}".format(self._args.file_prefix, add_padding(next_idx, len(str(self._args.original_num_files_train))), self._args.original_num_files_train, self._args.format))
-
-                    paths.append(next_filename)
-
-
-        if self._args.files_per_record is not None and self._args.files_per_record > 0:
-            for p in paths:
-                base_path = self.storage.get_uri(p)
-                for j in range(self._args.files_per_record):
-                    name = f"{base_path}/{j}.part"
-                    path = self.storage.get_uri(name)
-                    filenames.append(path)
-        else:
-            filenames = paths
-
-        return filenames
-
     @abstractmethod
     def open(self, filename):
-        return self.get_filenames(filename)
+        return 
 
     @abstractmethod
     def close(self, filename):

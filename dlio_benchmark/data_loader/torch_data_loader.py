@@ -50,7 +50,9 @@ class TorchDataset(Dataset):
         self.num_images_read = 0
         self.batch_size = batch_size
         args = ConfigArguments.get_instance()
-        self.serial_args = pickle.dumps(args)
+        self.serial_args = None
+        if args.multiprocessing_context != "fork":
+            self.serial_args = pickle.dumps(args)
         self.logger = args.logger
         self.dlp_logger = None
         if num_workers == 0:
@@ -84,7 +86,6 @@ class TorchDataset(Dataset):
         self.logger.debug(f"{utcnow()} Rank {DLIOMPI.get_instance().rank()} reading sample #{image_idx}, num_images_read {self.num_images_read}")
         dlp.update(step = step)
         return (self.reader.read_index(image_idx, step), )
-        # return self.reader.read_index(image_idx, step)
 
 class dlio_sampler(Sampler):
     def __init__(self, rank, size, num_samples, epochs):
@@ -100,18 +101,10 @@ class dlio_sampler(Sampler):
         self.indices = list(range(start_sample, end_sample + 1))
 
     def __len__(self):
-        # return self.num_samples
         return len(self.indices)
 
     def __iter__(self):
         return iter(self.indices)
-
-# @dlp.log
-# def _collate_fn(
-#     batch,
-# ):
-#     inp = torch.stack([torch.from_numpy(batch[i][0]) for i in range(len(batch))])
-#     return inp
 
 class TorchDataLoader(BaseDataLoader):
     @dlp.log_init

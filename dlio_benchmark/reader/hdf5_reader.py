@@ -1,5 +1,5 @@
 """
-   Copyright (c) 2024, UChicago Argonne, LLC
+   Copyright (c) 2025, UChicago Argonne, LLC
    All Rights Reserved
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,9 +17,7 @@
 import logging
 
 import h5py
-import numpy as np
 
-from dlio_benchmark.common.enumerations import ReadType
 from dlio_benchmark.common.constants import MODULE_DATA_READER
 from dlio_benchmark.utils.utility import Profile
 from dlio_benchmark.reader.reader_handler import FormatReader
@@ -33,37 +31,21 @@ class HDF5Reader(FormatReader):
     @dlp.log_init
     def __init__(self, dataset_type, thread_index, epoch):
         super().__init__(dataset_type, thread_index)
-        if self._args.original_num_dataset_per_record > self._args.num_dataset_per_record:
-            # if self._args.my_rank == 0:
-            #     self.logger.output("Will randomize the index of the dataset")
-            self.choices = np.random.choice(range(self._args.original_num_dataset_per_record), size=self._args.num_dataset_per_record)
-        else:
-            self.choices = list(range(self._args.num_dataset_per_record))
-        
 
     @dlp.log
     def open(self, filename):
-        filenames = super().open(filename)
-        fds = []
-        for filename in filenames:
-            fds.append(h5py.File(filename, 'r'))
-        return fds
+        super().open(filename)
+        return h5py.File(filename, 'r')
 
     @dlp.log
     def close(self, filename):
-        for fd in self.open_file_map[filename]:
-            fd.close()
+        self.open_file_map[filename].close()
 
     @dlp.log
     def get_sample(self, filename, sample_index):
         super().get_sample(filename, sample_index)
-        bytes = 0
-        for fd in self.open_file_map[filename]:
-            for i in self.choices:
-                image = fd[f'records_{i}'][sample_index]
-                bytes += image.nbytes
-                del image
-        dlp.update(image_size=int(bytes))
+        image = self.open_file_map[filename]['records'][sample_index]
+        dlp.update(image_size=image.nbytes)
 
     def next(self):
         for batch in super().next():
@@ -72,34 +54,6 @@ class HDF5Reader(FormatReader):
     @dlp.log
     def read_index(self, image_idx, step):
         return super().read_index(image_idx, step)
-
-    # @dlp.log
-    # def read_index(self, image_idx, step):
-    #     # return super().read_index(image_idx, step)
-    #     self.step = step
-    #     self.image_idx = image_idx
-    #     # self.logger.debug(f"{self.global_index_map}")
-    #     filename, sample_index = self.global_index_map[image_idx]
-    #     # self.logger.debug(f"{utcnow()} read_index {filename}, {sample_index}")
-    #     FormatReader.read_images += 1
-    # 
-    #     if self._args.read_type is ReadType.ON_DEMAND or filename not in self.open_file_map or self.open_file_map[filename] is None:
-    #         # self.logger.debug(f"opening {filename}")
-    #         bytes = 0
-    #         self.open_file_map[filename] = self.open(filename)
-    #         for filename in self.open_file_map[filename]:
-    #             with h5py.File(filename, 'r') as f:
-    #                 for i in self.choices:
-    #                     image = f[f'records_{i}'][sample_index]
-    #                     bytes += image.nbytes
-    #                     del image
-    #         dlp.update(image_size=int(bytes))
-    #     self.preprocess()
-    #     if self._args.read_type is ReadType.ON_DEMAND:
-    #         #     self.close(filename)
-    #         #     # self.logger.debug(f"closing {filename}")
-    #         self.open_file_map[filename] = None
-    #     return self._args.resized_image
 
     @dlp.log
     def finalize(self):
