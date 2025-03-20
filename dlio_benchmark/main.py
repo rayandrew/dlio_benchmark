@@ -293,17 +293,16 @@ class DLIOBenchmark(object):
 
         loader = self.framework.get_loader(dataset_type=DatasetType.TRAIN)
 
-        # pbar = tqdm.tqdm(
-        #     desc=f"epoch {epoch}, rank {self.args.my_rank}",
-        #     total=max_steps,
-        #     position=self.args.my_rank,
-        #     leave=True,
-        #     disable=self.args.my_rank != 0,
-        #     bar_format="{l_bar}{bar}|{n}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
-        # )
+        pbar = tqdm.tqdm(
+            desc=f"epoch {epoch}, rank {self.args.my_rank}",
+            total=max_steps,
+            position=self.args.my_rank,
+            leave=True,
+            disable=self.args.my_rank != 0,
+            bar_format="{l_bar}{bar}|{n}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
+        )
 
         self.stats.start_loading()
-        # for batch in dlp_iter.iter(loader.next(), name=loader.next.__qualname__):
         for batch in loader.next():
             self.stats.batch_loaded(epoch, overall_step, block)
             computation_time = self.args.computation_time if overall_step > 1 else self.args.first_computation_time
@@ -339,13 +338,14 @@ class DLIOBenchmark(object):
             # @Ray: need to add this to make the iteration similar
             overall_step += 1
 
-            # pbar.update()
+            pbar.update()
+
             # start a new block here
             if block_step == 1 and block != 1:
                 self.stats.start_block(epoch, block)
             self.stats.start_loading()
 
-        # pbar.close()
+        pbar.close()
         self.comm.barrier()
 
         if self.do_checkpoint and (self.steps_between_checkpoints < 0) and (epoch == self.next_checkpoint_epoch):
