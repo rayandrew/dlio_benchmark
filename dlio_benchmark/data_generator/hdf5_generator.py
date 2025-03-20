@@ -51,7 +51,7 @@ class HDF5Generator(DataGenerator):
                 self.hdf5_compression_level = self.compression_level
 
     def create_file(self, name, shape, records):
-        hf = h5py.File(name, 'w')
+        hf = h5py.File(name, 'w', libver='latest')
         for dataset_id in range(self._args.num_dataset_per_record):
             hf.create_dataset(f'records_{dataset_id}', shape, chunks=self.chunks, compression=self.hdf5_compression,
                               compression_opts=self.hdf5_compression_level, dtype=self.record_element_dtype, data=records)
