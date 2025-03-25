@@ -136,14 +136,14 @@ class TorchDataLoader(BaseDataLoader):
             # if torch.__version__ != '1.3.1':       
             #     kwargs['persistent_workers'] = True
         
-        # collate_fn = _collate_fn
+        collate_fn = None
         batch_size = self.batch_size
         if self._args.disable_collation:
-            if batch_size == 1:
-                batch_size = None
-                # collate_fn = None
             if batch_size > 1:
                 self.logger.warning(f"Cannot disable collation since batch_size is {batch_size}")
+
+            if batch_size == 1:
+                batch_size = None
 
         if self._args.my_rank == 0:
             self.logger.output(f"Dataloader, workers=%s, persistent_workers=%s, drop_last=False, prefetch_size=%s, pin_memory=%s, batch_size=%s", 
