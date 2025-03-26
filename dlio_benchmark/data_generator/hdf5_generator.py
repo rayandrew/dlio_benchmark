@@ -82,8 +82,8 @@ class HDF5Generator(DataGenerator):
                     shape = (self.num_samples, *dim1)
                 else:
                     shape = (1, *dim1)
-                if shape[0] == 1:
-                    shape = shape[1:]
+                # if shape[0] == 1:
+                #     shape = shape[1:]
                 # records = np.random.randint(255, size=shape, dtype=self.record_element_dtype)
                 records = rng.random(size=shape, dtype=self.record_element_dtype)
             else:
