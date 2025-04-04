@@ -21,7 +21,6 @@ from dlio_benchmark.common.enumerations import DatasetType
 from dlio_benchmark.data_loader.data_loader_factory import DataLoaderFactory
 from dlio_benchmark.storage.storage_factory import StorageFactory
 from dlio_benchmark.utils.utility import utcnow, DLIOMPI
-comm = DLIOMPI.get_instance().comm()
 
 import os
 import logging

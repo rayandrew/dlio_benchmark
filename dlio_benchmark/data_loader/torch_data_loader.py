@@ -146,8 +146,8 @@ class TorchDataLoader(BaseDataLoader):
                 batch_size = None
 
         if self._args.my_rank == 0:
-            self.logger.output(f"Dataloader, workers=%s, persistent_workers=%s, drop_last=False, prefetch_size=%s, pin_memory=%s, batch_size=%s", 
-                               self._args.read_threads, self._args.persistent_workers, self._args.prefetch_size, self._args.pin_memory, batch_size)
+            self.logger.output(f"Dataloader, workers=%s, persistent_workers=%s, drop_last=False, prefetch_size=%s, pin_memory=%s, batch_size=%s, multiprocessing_context=%s",
+                               self._args.read_threads, self._args.persistent_workers, self._args.prefetch_size, self._args.pin_memory, batch_size, self._args.multiprocessing_context)
 
         if torch.__version__ == '1.3.1':
             if self._args.my_rank == 0:
@@ -163,6 +163,7 @@ class TorchDataLoader(BaseDataLoader):
                                        drop_last=False,
                                        worker_init_fn=dataset.worker_init, 
                                        prefetch_factor=self._args.prefetch_size,
+                                       multiprocessing_context=self._args.multiprocessing_context,
                                        # collate_fn=collate_fn,
                                        **kwargs)
         else: 
@@ -175,6 +176,7 @@ class TorchDataLoader(BaseDataLoader):
                                        drop_last=False,
                                        worker_init_fn=dataset.worker_init,
                                        prefetch_factor=self._args.prefetch_size,
+                                       multiprocessing_context=self._args.multiprocessing_context,
                                        # collate_fn=collate_fn,
                                        **kwargs)
         self.logger.debug(f"{utcnow()} Rank {self._args.my_rank} will read {len(self._dataset) * self.batch_size} files")
