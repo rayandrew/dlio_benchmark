@@ -39,22 +39,20 @@ class HDF5Generator(DataGenerator):
         self.record_element_dtype = self._args.bytes_to_np_dtype(self._args.record_element_bytes) if self._args.record_element_type == "" else np.dtype(self._args.record_element_type)
 
         self.record_labels = [0] * self.num_samples
-        self.chunks = None
-        if len(self._args.chunk_dims) > 0:
-            self.chunks = self._args.chunk_dims
 
         self.hdf5_compression = None
         self.hdf5_compression_level = None
         if self.compression != Compression.NONE:
             self.hdf5_compression = str(self.compression)
-            if self.compression == Compression.GZIP:
+            if self.compression == str(Compression.GZIP):
+                # print(f"Compression {self.compression}, level {self.compression_level}", flush=True)
                 self.hdf5_compression_level = self.compression_level
 
-    def create_file(self, name, shape, records):
+    def create_file(self, name, shape, records, **kwargs):
         hf = h5py.File(name, 'w', libver='latest')
         for dataset_id in range(self._args.num_dataset_per_record):
-            hf.create_dataset(f'records_{dataset_id}', shape, chunks=self.chunks, compression=self.hdf5_compression,
-                              compression_opts=self.hdf5_compression_level, dtype=self.record_element_dtype, data=records)
+            hf.create_dataset(f'records_{dataset_id}', shape, compression=self.hdf5_compression,
+                              compression_opts=self.hdf5_compression_level, dtype=self.record_element_dtype, data=records, **kwargs)
         hf.create_dataset('labels', data=self.record_labels)
         hf.close()
 
@@ -73,27 +71,34 @@ class HDF5Generator(DataGenerator):
         if self._args.num_dataset_per_record > 1:
             dim = [[int(d[0] / self._args.num_dataset_per_record), *d[1:]] for d in dim]
 
+        kwargs = {}
+
+        if len(self._args.chunk_dims) > 0:
+            kwargs["chunks"] = self._args.chunk_dims
+
         for i in dlp.iter(range(self.my_rank, int(self.total_files_to_generate), self.comm_size)):
             dim1 = dim[2*i]
             if isinstance(dim1, list):
                 if dim1[0] == 1:
                     dim1 = dim1[1:]
+                shape = (1, *dim1)
                 if self.num_samples > 1:
                     shape = (self.num_samples, *dim1)
-                else:
-                    shape = (1, *dim1)
-                # if shape[0] == 1:
-                #     shape = shape[1:]
-                # records = np.random.randint(255, size=shape, dtype=self.record_element_dtype)
+
+                if len(self._args.max_shape) > 0:
+                    kwargs["maxshape"] = (shape[0], *self._args.max_shape)
+
                 records = rng.random(size=shape, dtype=self.record_element_dtype)
             else:
                 dim2 = dim[2*i+1]
+                shape = (1, dim1, dim2)
                 if self.num_samples > 1:
                     shape = (self.num_samples, dim1, dim2)
-                else:
-                    shape = (1, dim1, dim2)
+
+                if len(self._args.max_shape) > 0:
+                    kwargs["maxshape"] = (shape[0], *self._args.max_shape)
+
                 records = rng.random(size=shape, dtype=self.record_element_dtype)
-                # records = np.random.randint(255, size=shape, dtype=self.record_element_dtype)
 
             progress(i+1, self.total_files_to_generate, "Generating HDF5 Data")
 
@@ -103,8 +108,8 @@ class HDF5Generator(DataGenerator):
                 for j in range(self._args.files_per_record):
                     name = f"{self._file_list[i]}/{j}.part"
                     out_path_spec = self.storage.get_uri(name)
-                    self.create_file(name=out_path_spec, shape=shape, records=records)
+                    self.create_file(name=out_path_spec, shape=shape, records=records, **kwargs)
             else:
-                self.create_file(name=out_path_spec, shape=shape, records=records)
+                self.create_file(name=out_path_spec, shape=shape, records=records, **kwargs)
 
         np.random.seed()
