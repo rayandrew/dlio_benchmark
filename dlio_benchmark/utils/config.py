@@ -147,6 +147,8 @@ class ConfigArguments:
     record_element_type: str = ""
     files_per_record: int = None
 
+    cache_dir: str = None
+
     ## train
     first_computation_time: ClassVar[Dict[str, Any]] = {}
 
@@ -155,14 +157,15 @@ class ConfigArguments:
     ## hdf5
     num_dataset_per_record: int = 1
     chunk_dims: ClassVar[List[int]] = []
+    max_shape: ClassVar[List[int]] = []
     ##########################################
 
     # derived fields
     ##########################################
     # NEW API
     ##########################################
-    original_num_files_train: int = 8
-    original_num_files_eval: int = 0
+    original_num_files_train: int = None
+    original_num_files_eval: int = None
 
     required_samples: int = 1
     total_samples_eval: int = 1
@@ -255,12 +258,20 @@ class ConfigArguments:
             dlp_trace = get_trace_name(self.output_folder, use_pid)
             if DLIOMPI.get_instance().rank() == 0:
                 self.logger.info(f"{utcnow()} Profiling DLIO {dlp_trace}")
+            tracked_dirs = [
+                f"{os.path.abspath(self.data_folder)}",
+                f"{self.data_folder}",
+                f"./{self.data_folder}",
+                f"{self.checkpoint_folder}",
+                f"./{self.checkpoint_folder}",
+                f"{os.path.abspath(self.checkpoint_folder)}",
+            ]
+            if self.cache_dir:
+                tracked_dirs.append(os.path.abspath(self.cache_dir))
+            data_dirs = ":".join(tracked_dirs)
             return PerfTrace.initialize_log(logfile=dlp_trace,
-                                                   data_dir=f"{os.path.abspath(self.data_folder)}:"
-                                                            f"{self.data_folder}:./{self.data_folder}:"
-                                                            f"{self.checkpoint_folder}:./{self.checkpoint_folder}:"
-                                                            f"{os.path.abspath(self.checkpoint_folder)}",
-                                                   process_id=self.my_rank)
+                                            data_dir=data_dirs,
+                                            process_id=self.my_rank)
         return None
 
     def finalize_dftracer(self, dlp_logger):
@@ -278,12 +289,12 @@ class ConfigArguments:
         if (self.framework == FrameworkType.TENSORFLOW and self.data_loader == DataLoaderType.PYTORCH) or (
                 self.framework == FrameworkType.PYTORCH and self.data_loader == DataLoaderType.TENSORFLOW):
             raise Exception("Imcompatible between framework and data_loader setup.")
-        # if len(self.file_list_train) != self.num_files_train:
-        #     raise Exception(
-        #         f"Expected {self.num_files_train} training files but {len(self.file_list_train)} found. Ensure data was generated correctly.")
-        # if len(self.file_list_eval) != self.num_files_eval:
-        #     raise Exception(
-        #         f"Expected {self.num_files_eval} evaluation files but {len(self.file_list_eval)} found. Ensure data was generated correctly.")
+        if not self.generate_only and len(self.file_list_train) < self.num_files_train:
+            raise Exception(
+                f"Expected {self.num_files_train} training files but {len(self.file_list_train)} found. Ensure data was generated correctly.")
+        if not self.generate_only and len(self.file_list_eval) < self.num_files_eval:
+            raise Exception(
+                f"Expected {self.num_files_eval} evaluation files but {len(self.file_list_eval)} found. Ensure data was generated correctly.")
         if self.data_loader_classname is not None and self.data_loader_sampler is None:
             raise Exception(
                 f"For custom data loaders workload.reader.data_loader_sampler needs to be defined as iter or index.")
@@ -305,6 +316,10 @@ class ConfigArguments:
             raise Exception(f"ZeRO stage {self.zero_stage} is not compatible with pipeline parallelism.")
         if self.comm_size % (self.pipeline_parallelism * self.tensor_parallelism) != 0:
             raise Exception(f"Number of processes {self.comm_size} is not a multiple of model parallelism size: {self.pipeline_parallelism * self.tensor_parallelism}")
+
+        ## NEW API
+        if len(self.max_shape) > 0 and len(self.max_shape) != len(self.record_dims):
+            raise Exception(f"Max shape ({self.max_shape}) needs to have similar dimension with record_dims ({self.record_dims})")
 
     @staticmethod
     def reset():
@@ -354,8 +369,8 @@ class ConfigArguments:
                 self.resized_image = np.random.randint(255, size=(self.max_dimension, self.max_dimension), dtype=np.uint8)
             self.file_list_train = file_list_train
             self.file_list_eval = file_list_eval
-            self.original_num_files_eval = len(file_list_eval)
-            self.original_num_files_train = len(file_list_train)
+            self.original_num_files_eval = len(file_list_eval) if self.original_num_files_eval is None else self.original_num_files_eval
+            self.original_num_files_train = len(file_list_train) if self.original_num_files_train is None else self.original_num_files_train
             self.total_samples_train = self.num_samples_per_file * self.num_files_train
             self.total_samples_eval = self.num_samples_per_file * self.num_files_eval
             # self.train_sample_index_sum = self.total_samples_train * (self.total_samples_train - 1) // 2
@@ -540,6 +555,9 @@ def LoadConfig(args, config):
             args.storage_type = StorageType(config['storage']['storage_type'])
         if 'storage_root' in config['storage']:
             args.storage_root = config['storage']['storage_root']
+        if 'cache_dir' in config['storage']:
+            args.cache_dir = config['storage']['cache_dir']
+            os.makedirs(args.cache_dir, exist_ok=True)
 
     # dataset related settings
     if 'dataset' in config:
@@ -591,6 +609,10 @@ def LoadConfig(args, config):
             args.record_length = np.prod(args.record_dims) * args.record_element_bytes
         if 'files_per_record' in config['dataset']:
             args.files_per_record = config['dataset']['files_per_record']
+        if 'original_num_files_train' in config['dataset']:
+            args.original_num_files_train = config['dataset']['original_num_files_train']
+        if 'original_num_files_eval' in config['dataset']:
+            args.original_num_files_eval = config['dataset']['original_num_files_eval']
 
         ##########################################
         # new API
@@ -604,6 +626,8 @@ def LoadConfig(args, config):
             if len(args.record_dims) > 0:
                 if args.record_dims[0] % args.num_dataset_per_record != 0:
                     raise ValueError("hdf5.num_dataset_per_record should be divisible by record_dims[0]")
+            if 'max_shape' in config['dataset']['hdf5']:
+                args.max_shape = list(config['dataset']['hdf5']['max_shape'])
 
     # data reader
     reader = None
