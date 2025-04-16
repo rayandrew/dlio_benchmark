@@ -159,11 +159,12 @@ class TorchDataLoader(BaseDataLoader):
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
-                                       persistent_workers=self._args.persistent_workers,
+                                       persistent_workers=self._args.persistent_workers if self._args.read_threads > 0 else False,
                                        drop_last=False,
                                        worker_init_fn=dataset.worker_init, 
-                                       prefetch_factor=self._args.prefetch_size,
-                                       multiprocessing_context=self._args.multiprocessing_context,
+                                       prefetch_factor=self._args.prefetch_size if self._args.read_threads > 0 else None,
+                                       multiprocessing_context=self._args.multiprocessing_context if self._args.read_threads > 0 else None,
+                                       # timeout=300,
                                        # collate_fn=collate_fn,
                                        **kwargs)
         else: 
@@ -172,11 +173,12 @@ class TorchDataLoader(BaseDataLoader):
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
-                                       persistent_workers=self._args.persistent_workers,
+                                       persistent_workers=self._args.persistent_workers if self._args.read_threads > 0 else False,
                                        drop_last=False,
                                        worker_init_fn=dataset.worker_init,
-                                       prefetch_factor=self._args.prefetch_size,
-                                       multiprocessing_context=self._args.multiprocessing_context,
+                                       prefetch_factor=self._args.prefetch_size if self._args.read_threads > 0 else None,
+                                       multiprocessing_context=self._args.multiprocessing_context if self._args.read_threads > 0 else None,
+                                       # timeout=300,
                                        # collate_fn=collate_fn,
                                        **kwargs)
         self.logger.debug(f"{utcnow()} Rank {self._args.my_rank} will read {len(self._dataset) * self.batch_size} files")
