@@ -74,7 +74,19 @@ class Framework(ABC):
         sleep(computation_time)
 
     @abstractmethod
-    def compute(self, batch, epoch_number, step, computation_time):
+    def compute(self, batch, epoch_number, step, computation_time, accumulate_grad_batches=1):
+        pass
+    
+    @abstractmethod
+    def forward(self, batch, epoch_number, step, computation_time):
+        pass
+    
+    @abstractmethod
+    def backward(self, batch, epoch_number, step, computation_time, accumulate_grad_batches=1):
+        pass
+
+    @abstractmethod
+    def transfer(self, batch, epoch_number, step, transfer_time):
         pass
 
     @abstractmethod

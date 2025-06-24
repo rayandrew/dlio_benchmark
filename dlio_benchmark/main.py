@@ -21,6 +21,7 @@ from time import time
 import json
 import numpy as np
 import tqdm.auto as tqdm
+import random
 
 # Reduce TF and CUDA logging
 from numpy import random
@@ -278,6 +279,110 @@ class DLIOBenchmark(object):
                 self.stats.end_load_ckpt(epoch, block)
             block = block+1
             overall_step = overall_step + 1
+
+    # @dlp.log
+    # def _train(self, epoch):
+    #     """
+    #     Training loop for reading the dataset and performing training computations.
+    #     :return: returns total steps.
+    #     """
+    #     block = 1  # A continuous period of training steps, ended by checkpointing
+    #     block_step = overall_step = 1  # Steps are taken within blocks
+    #     max_steps = math.floor(self.num_samples * self.num_files_train / self.batch_size / self.comm_size)
+    #     self.steps_per_epoch = max_steps
+    #     # Start the very first block
+    #     self.stats.start_block(epoch, block)
+
+    #     loader = self.framework.get_loader(dataset_type=DatasetType.TRAIN)
+
+    #     pbar = tqdm.tqdm(
+    #         desc=f"epoch {epoch}, rank {self.args.my_rank}",
+    #         total=max_steps,
+    #         position=self.args.my_rank,
+    #         leave=True,
+    #         disable=self.args.my_rank != 0,
+    #         bar_format="{l_bar}{bar}|{n}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
+    #     )
+
+    #     self.stats.start_loading()
+    #     for batch in loader.next():
+    #         device_transfer_time = None
+    #         if isinstance(self.args.device_transfer_time, dict) and len(self.args.device_transfer_time) > 0:
+    #             device_transfer_time = self.args.device_transfer_time
+    #         if device_transfer_time:
+    #             self.framework.transfer(batch, epoch, overall_step, device_transfer_time)
+
+    #         self.stats.batch_loaded(epoch, overall_step, block)
+    #         computation_time = None
+    #         if self.args.forward_computation_time:
+    #             if isinstance(self.args.forward_computation_time, dict) and len(self.args.forward_computation_time) > 0:
+    #                 computation_time = self.args.forward_computation_time
+    #             elif isinstance(self.args.forward_computation_time, float) and self.args.forward_computation_time > 0:
+    #                 computation_time = self.args.forward_computation_time
+            
+    #         if computation_time is None:
+    #             computation_time = self.args.computation_time
+
+    #         if overall_step == 1:
+    #             computation_time = self.args.first_computation_time
+
+    #         if (isinstance(computation_time, dict) and len(computation_time) > 0) or (isinstance(computation_time, float) and  computation_time > 0):
+    #             self.framework.trace_object("Train", overall_step, 1)
+
+    #         backward_computation_time = None
+
+    #         if isinstance(self.args.backward_computation_time, dict) and len(self.args.backward_computation_time) > 0 and (overall_step % self.args.accumulate_grad_batches == 0):
+    #             backward_computation_time = self.args.backward_computation_time
+
+    #         self.stats.start_compute()
+    #         self.framework.compute(batch, epoch, block_step, computation_time, backward_computation_time=backward_computation_time)
+    #         self.stats.batch_processed(epoch, overall_step, block)
+    #         This is the barrier to simulate allreduce. It is required to simulate the actual workloads.
+    #         if (overall_step % self.args.accumulate_grad_batches == 0):
+    #             self.comm.barrier()
+    #         if self.do_checkpoint and (
+    #                 self.steps_between_checkpoints >= 0) and overall_step == self.next_checkpoint_step:
+    #             self.stats.end_block(epoch, block, block_step)
+    #             self.stats.start_save_ckpt(epoch, block, overall_step)
+    #             self.checkpointing_mechanism.save_checkpoint(epoch, overall_step)
+    #             self.stats.end_save_ckpt(epoch, block)
+    #             block += 1
+    #             # Reset the number of steps after every checkpoint to mark the start of a new block
+    #             block_step = 1
+    #             self.next_checkpoint_step += self.steps_between_checkpoints
+    #         else:
+    #             block_step += 1
+
+    #         # overall_step += 1
+
+    #         if overall_step >= max_steps or ((self.total_training_steps > 0) and (overall_step > self.total_training_steps)):
+    #             if self.args.my_rank == 0:
+    #                 self.logger.output(f"{utcnow()} Maximum number of steps reached")
+    #             if (not self.do_checkpoint):
+    #                 self.stats.end_block(epoch, block, block_step - 1)
+    #             break
+
+    #         # @Ray: need to add this to make the iteration similar
+    #         overall_step += 1
+
+    #         pbar.update()
+
+    #         # start a new block here
+    #         if block_step == 1 and block != 1:
+    #             self.stats.start_block(epoch, block)
+    #         self.stats.start_loading()
+
+    #     pbar.close()
+    #     self.comm.barrier()
+
+    #     if self.do_checkpoint and (self.steps_between_checkpoints < 0) and (epoch == self.next_checkpoint_epoch):
+    #         self.stats.end_block(epoch, block, block_step-1)
+    #         self.stats.start_save_ckpt(epoch, block, overall_step-1)
+    #         self.checkpointing_mechanism.save_checkpoint(epoch, overall_step)
+    #         self.stats.end_save_ckpt(epoch, block)
+    #         self.next_checkpoint_epoch += self.epochs_between_checkpoints
+    #     return overall_step
+
     @dlp.log
     def _train(self, epoch):
         """
@@ -303,16 +408,32 @@ class DLIOBenchmark(object):
         )
 
         self.stats.start_loading()
+        stat_end_block = False
+        # simulated_sync_duration = 0.03    # 30 ms
+        # memory_pressure_duration = 0.01   # 10 ms
+        # dataloader_slowdown_per_batch = 0.002  # 2 ms
         for batch in loader.next():
+            device_transfer_time = None
+            if isinstance(self.args.device_transfer_time, dict) and len(self.args.device_transfer_time) > 0:
+                device_transfer_time = self.args.device_transfer_time
+            self.framework.transfer(batch, epoch, overall_step, device_transfer_time)
+
+            # artificial_dataloader_slowdown(batch, slowdown_time=dataloader_slowdown_per_batch)
             self.stats.batch_loaded(epoch, overall_step, block)
             computation_time = self.args.computation_time if overall_step > 1 else self.args.first_computation_time
             if (isinstance(computation_time, dict) and len(computation_time) > 0) or (isinstance(computation_time, float) and  computation_time > 0):
                 self.framework.trace_object("Train", overall_step, 1)
+            backward_computation_time = None
+
+            if isinstance(self.args.backward_computation_time, dict) and len(self.args.backward_computation_time) > 0:
+                backward_computation_time = self.args.backward_computation_time
             self.stats.start_compute()
-            self.framework.compute(batch, epoch, block_step, computation_time)
+            self.framework.compute(batch, epoch, block_step, computation_time, 
+                                   backward_computation_time=backward_computation_time, accumulate_grad_batches=self.args.accumulate_grad_batches)
             self.stats.batch_processed(epoch, overall_step, block)
             # This is the barrier to simulate allreduce. It is required to simulate the actual workloads.
-            self.comm.barrier()
+            # if (overall_step % self.args.accumulate_grad_batches == 0):
+            #     self.comm.barrier()
             if self.do_checkpoint and (
                     self.steps_between_checkpoints >= 0) and overall_step == self.next_checkpoint_step:
                 self.stats.end_block(epoch, block, block_step)
@@ -326,13 +447,12 @@ class DLIOBenchmark(object):
             else:
                 block_step += 1
 
-            # overall_step += 1
-
             if overall_step > max_steps or ((self.total_training_steps > 0) and (overall_step > self.total_training_steps)):
                 if self.args.my_rank == 0:
                     self.logger.output(f"{utcnow()} Maximum number of steps reached")
                 if (not self.do_checkpoint):
                     self.stats.end_block(epoch, block, block_step - 1)
+                    stat_end_block = True
                 break
 
             # @Ray: need to add this to make the iteration similar
@@ -346,6 +466,10 @@ class DLIOBenchmark(object):
             self.stats.start_loading()
 
         pbar.close()
+
+        if not stat_end_block and (not self.do_checkpoint):
+            self.stats.end_block(epoch, block, block_step - 1)
+
         self.comm.barrier()
 
         if self.do_checkpoint and (self.steps_between_checkpoints < 0) and (epoch == self.next_checkpoint_epoch):

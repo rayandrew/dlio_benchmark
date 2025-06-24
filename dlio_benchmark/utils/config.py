@@ -151,6 +151,10 @@ class ConfigArguments:
 
     ## train
     first_computation_time: ClassVar[Dict[str, Any]] = {}
+    forward_computation_time: ClassVar[Dict[str, Any]] = {}
+    backward_computation_time: ClassVar[Dict[str, Any]] = {}
+    accumulate_grad_batches: int = 1
+    device_transfer_time: ClassVar[Dict[str, Any]] = {}
 
     ## reader
 
@@ -737,6 +741,49 @@ def LoadConfig(args, config):
             else:
                 args.first_computation_time = config['train']['first_computation_time']
             args.first_computation_time = first_computation_time if first_computation_time is not None else {}
+
+        args.forward_computation_time = {}
+        if 'forward_computation_time' in config['train']:
+            forward_computation_time = {}
+            if isinstance(config['train']['forward_computation_time'], dict):
+                forward_computation_time = config['train']['forward_computation_time']
+            elif isinstance(config['train']['forward_computation_time'], (int, float)):
+                forward_computation_time["mean"] = config['train']['forward_computation_time']
+            elif isinstance(config['train']['forward_computation_time'], DictConfig):
+                forward_computation_time = OmegaConf.to_container(config['train']['forward_computation_time'])
+            else:
+                args.forward_computation_time = config['train']['forward_computation_time']
+            args.forward_computation_time = forward_computation_time if forward_computation_time is not None else {}
+            args.first_computation_time = args.forward_computation_time
+
+        args.backward_computation_time = {}
+        if 'backward_computation_time' in config['train']:
+            backward_computation_time = {}
+            if isinstance(config['train']['backward_computation_time'], dict):
+                backward_computation_time = config['train']['backward_computation_time']
+            elif isinstance(config['train']['backward_computation_time'], (int, float)):
+                backward_computation_time["mean"] = config['train']['backward_computation_time']
+            elif isinstance(config['train']['backward_computation_time'], DictConfig):
+                backward_computation_time = OmegaConf.to_container(config['train']['backward_computation_time'])
+            else:
+                args.backward_computation_time = config['train']['backward_computation_time']
+            args.backward_computation_time = backward_computation_time if backward_computation_time is not None else {}
+
+        args.device_transfer_time = {}
+        if 'device_transfer_time' in config['train']:
+            device_transfer_time = {}
+            if isinstance(config['train']['device_transfer_time'], dict):
+                device_transfer_time = config['train']['device_transfer_time']
+            elif isinstance(config['train']['device_transfer_time'], (int, float)):
+                device_transfer_time["mean"] = config['train']['device_transfer_time']
+            elif isinstance(config['train']['device_transfer_time'], DictConfig):
+                device_transfer_time = OmegaConf.to_container(config['train']['device_transfer_time'])
+            else:
+                args.device_transfer_time = config['train']['device_transfer_time']
+            args.device_transfer_time = device_transfer_time if device_transfer_time is not None else {}
+
+        if 'accumulate_grad_batches' in config['train']:
+            args.accumulate_grad_batches = config['train']['accumulate_grad_batches']
 
     if 'evaluation' in config:
         args.eval_time = {}
