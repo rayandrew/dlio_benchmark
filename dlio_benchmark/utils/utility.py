@@ -338,17 +338,54 @@ def get_trace_name(output_folder, use_pid=False):
 def sleep(config, exec=True):
     sleep_time = 0.0
     if isinstance(config, dict) and len(config) > 0:
-        if "type" in config:
-            if config["type"] == "normal":
-                sleep_time = np.random.normal(config["mean"], config["stdev"])
-            elif config["type"] == "uniform":
-                sleep_time = np.random.uniform(config["min"], config["max"])
-            elif config["type"] == "gamma":
-                sleep_time = np.random.gamma(config["shape"], config["scale"])
-            elif config["type"] == "exponential":
-                sleep_time = np.random.exponential(config["scale"])
-            elif config["type"] == "poisson":
-                sleep_time = np.random.poisson(config["lam"])
+        dist_type = config.get("type", "").lower()
+        if dist_type == "normal":
+            sleep_time = np.random.normal(config["mean"], config["stdev"])
+        elif dist_type == "uniform":
+            sleep_time = np.random.uniform(config["min"], config["max"])
+        elif dist_type == "gamma":
+            sleep_time = np.random.gamma(config["shape"], config["scale"])
+        elif dist_type == "exponential":
+            sleep_time = np.random.exponential(config["scale"])
+        elif dist_type == "lognormal":
+            if "mean" in config and "sigma" in config:
+                sleep_time = np.random.lognormal(config["mean"], config["sigma"])
+            elif "s" in config and "scale" in config:
+                sigma = config["s"]
+                scale = config["scale"]
+                loc = config.get("loc", 0.0)
+                mean = np.log(scale)
+                sleep_time = loc + np.random.lognormal(mean, sigma)
+            else:
+                raise ValueError("Lognormal config must provide either ('mean', 'sigma') or ('s', 'scale').")
+        elif dist_type == "beta":
+            sleep_time = np.random.beta(config["a"], config["b"])
+            if "scale" in config:
+                sleep_time *= config["scale"]
+            if "loc" in config:
+                sleep_time += config["loc"]
+        elif dist_type == "weibull":
+            if "a" in config:
+                # NumPy-style shape only
+                sleep_time = np.random.weibull(config["a"])
+            elif "c" in config:
+                # SciPy-style shape c with optional loc/scale
+                c = config["c"]
+                scale = config.get("scale", 1.0)
+                loc = config.get("loc", 0.0)
+                sleep_time = loc + scale * np.random.weibull(c)
+            else:
+                raise ValueError("Weibull config must provide either 'a' or 'c'.")
+        elif dist_type == "pareto":
+            a = config["a"]
+            x = np.random.pareto(a)
+            if "scale" in config:
+                x *= config["scale"]
+            if "loc" in config:
+                x += config["loc"]
+            sleep_time = x
+        elif dist_type == "poisson":
+            sleep_time = np.random.poisson(config["lam"])
         else:
             if "mean" in config:
                 if "stdev" in config:
@@ -357,6 +394,7 @@ def sleep(config, exec=True):
                     sleep_time = config["mean"]
     elif isinstance(config, (int, float)):
         sleep_time = config
+
     sleep_time = abs(sleep_time)
     if sleep_time > 0.0 and exec:
         base_sleep(sleep_time)
