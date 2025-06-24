@@ -136,7 +136,7 @@ class TorchDataLoader(BaseDataLoader):
             # if torch.__version__ != '1.3.1':       
             #     kwargs['persistent_workers'] = True
         
-        collate_fn = None
+        # collate_fn = None
         batch_size = self.batch_size
         if self._args.disable_collation:
             if batch_size > 1:
@@ -146,8 +146,8 @@ class TorchDataLoader(BaseDataLoader):
                 batch_size = None
 
         if self._args.my_rank == 0:
-            self.logger.output(f"Dataloader, workers=%s, persistent_workers=%s, drop_last=False, prefetch_size=%s, pin_memory=%s, batch_size=%s, multiprocessing_context=%s",
-                               self._args.read_threads, self._args.persistent_workers, self._args.prefetch_size, self._args.pin_memory, batch_size, self._args.multiprocessing_context)
+            self.logger.output(f"Dataloader, workers=%s, persistent_workers=%s, drop_last=False, prefetch_size=%s, pin_memory=%s, batch_size=%s, multiprocessing_context=%s, collate_fn disabled=%s",
+                               self._args.read_threads, self._args.persistent_workers, self._args.prefetch_size, self._args.pin_memory, batch_size, self._args.multiprocessing_context, self._args.disable_collation and batch_size == None)
 
         if torch.__version__ == '1.3.1':
             if self._args.my_rank == 0:
@@ -192,9 +192,12 @@ class TorchDataLoader(BaseDataLoader):
     def next(self):
         super().next()
         total = self._args.training_steps if self.dataset_type is DatasetType.TRAIN else self._args.eval_steps
+        # total_training_steps = self._args.total_training_steps
         self.logger.debug(f"{utcnow()} Rank {self._args.my_rank} should read {total} batches")
         step = 1
         for batch in dlp.iter(self._dataset, name=self.next.__qualname__):
+            # if step > total_training_steps:
+            #   break
             dlp.update(step = step)
             step += 1
             yield batch
