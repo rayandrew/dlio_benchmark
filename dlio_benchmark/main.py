@@ -15,6 +15,7 @@
    limitations under the License.
 """
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import math
 import logging
 from time import time
@@ -409,22 +410,32 @@ class DLIOBenchmark(object):
 
         self.stats.start_loading()
         stat_end_block = False
-        # simulated_sync_duration = 0.03    # 30 ms
-        # memory_pressure_duration = 0.01   # 10 ms
-        # dataloader_slowdown_per_batch = 0.002  # 2 ms
         for batch in loader.next():
+            # @Note: ray: fix to have same training steps
+            if overall_step > max_steps or ((self.total_training_steps > 0) and (overall_step > self.total_training_steps)):
+                if self.args.my_rank == 0:
+                    self.logger.output(f"{utcnow()} Maximum number of steps reached")
+                if (not self.do_checkpoint):
+                    self.stats.end_block(epoch, block, block_step - 1)
+                    stat_end_block = True
+                break
+
             device_transfer_time = None
             if isinstance(self.args.device_transfer_time, dict) and len(self.args.device_transfer_time) > 0:
                 device_transfer_time = self.args.device_transfer_time
-            self.framework.transfer(batch, epoch, overall_step, device_transfer_time)
+            if isinstance(device_transfer_time, float) and device_transfer_time > 0:
+                self.framework.transfer(batch, epoch, overall_step, device_transfer_time)
 
-            # artificial_dataloader_slowdown(batch, slowdown_time=dataloader_slowdown_per_batch)
             self.stats.batch_loaded(epoch, overall_step, block)
-            computation_time = self.args.computation_time if overall_step > 1 else self.args.first_computation_time
-            if (isinstance(computation_time, dict) and len(computation_time) > 0) or (isinstance(computation_time, float) and  computation_time > 0):
+            if overall_step == 1 and ((isinstance(self.args.first_computation_time, float) and self.args.first_computation_time > 0) or
+                (isinstance(self.args.computation_time, dict) and len(self.args.computation_time) > 0)):
+                computation_time = self.args.first_computation_time
+            else:
+                computation_time = self.args.computation_time
+
+            if (isinstance(computation_time, dict) and len(computation_time) > 0) or (isinstance(computation_time, float) and computation_time > 0):
                 self.framework.trace_object("Train", overall_step, 1)
             backward_computation_time = None
-
             if isinstance(self.args.backward_computation_time, dict) and len(self.args.backward_computation_time) > 0:
                 backward_computation_time = self.args.backward_computation_time
             self.stats.start_compute()
@@ -455,7 +466,7 @@ class DLIOBenchmark(object):
                     stat_end_block = True
                 break
 
-            # @Ray: need to add this to make the iteration similar
+            # @Note: ray: need to add this to make the iteration similar
             overall_step += 1
 
             pbar.update()
