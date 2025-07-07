@@ -15,7 +15,6 @@
    limitations under the License.
 """
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import math
 import logging
 from time import time
