@@ -409,7 +409,7 @@ def test_ai_logging_train_with_checkpoint(setup_test_env, framework, epoch_per_c
     for num_checkpoint_write in [3, 4]
     for num_checkpoint_read in [1, 2, 3]
 ])
-def test_ai_logging_train_with_checkpoint_only(setup_test_env, framework, num_checkpoint_write, num_checkpoint_read):
+def test_ai_logging_checkpoint_only(setup_test_env, framework, num_checkpoint_write, num_checkpoint_read):
     storage_root = setup_test_env
     with initialize_config_dir(version_base=None, config_dir=config_dir):
         cfg = compose(
@@ -434,7 +434,8 @@ def test_ai_logging_train_with_checkpoint_only(setup_test_env, framework, num_ch
         run_benchmark(cfg)
 
     paths = glob.glob(os.path.join(storage_root, "*.pfw"))
-    assert len(paths) == 0, "No pfw files found"
+
+    assert len(paths) > 0, "No pfw files found"
 
     # find trace-{RANK} in paths
     chosen_path = [p for p in paths if f"trace-{comm.rank}" in p]
