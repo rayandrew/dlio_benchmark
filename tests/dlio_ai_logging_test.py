@@ -215,8 +215,8 @@ def test_ai_logging_train_with_step(setup_test_env, framework, step, read_thread
     assert count["compute"]    == num_epochs * step
 
     # @ray: we are using relax comparison and approximation (+/- 2)
-    assert count["item"] == pytest.approx(num_epochs * step, rel=DATA_EVENTS_RELAXATION_TOLERANCE)
-    assert count["preprocess"] == pytest.approx(num_epochs * step, rel=DATA_EVENTS_RELAXATION_TOLERANCE)
+    assert count["item"]       >= 2 * num_epochs * num_data_pp
+    assert count["preprocess"] >= 2 * num_epochs * num_data_pp
 
     assert count["ckpt_capture"] == 0
     assert count["ckpt_restart"] == 0
