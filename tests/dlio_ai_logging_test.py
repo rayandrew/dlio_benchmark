@@ -333,7 +333,11 @@ def test_ai_logging_with_reader(setup_test_env, framework, fmt):
     else:
         # @ray: we are using relax comparison and approximation (+/- 2)
         assert count["item"]       == 2 * num_epochs * num_data_pp
-        assert count["preprocess"] == 2 * num_epochs * num_data_pp
+        if fmt != "synthetic":
+            # @ray: synthetic reader has no preprocess
+            assert count["preprocess"] == 0
+        else:
+            assert count["preprocess"] == 2 * num_epochs * num_data_pp
 
     assert count["ckpt_capture"] == 0
     assert count["ckpt_restart"] == 0
