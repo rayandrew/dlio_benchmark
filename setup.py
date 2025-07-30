@@ -7,6 +7,7 @@ HYDRA_VERSION = "1.3.2"
 
 test_deps = [
     "pytest",
+    "pydftracer @ git+https://github.com/LLNL/dftracer.git@b64cd2a800d6d90c7777405569a6cd2b8b0487c4",
 ]
 core_deps = [
     "Pillow>=9.3.0",
@@ -22,7 +23,6 @@ x86_deps = [
     f"hydra-core>={HYDRA_VERSION}",
     "nvidia-dali-cuda120>=1.34.0",
     "tensorflow>=2.13.1",
-    "tensorflow_io>=0.33.0",
     "torch>=2.2.0",
     "torchaudio",
     "torchvision",
@@ -41,7 +41,7 @@ else:
 extras = {
     "test": test_deps,
     "dftracer": [
-        "pydftracer==1.0.11",
+        "pydftracer @ git+https://github.com/LLNL/dftracer.git@b64cd2a800d6d90c7777405569a6cd2b8b0487c4",
     ],
 }
 

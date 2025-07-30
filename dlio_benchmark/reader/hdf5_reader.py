@@ -17,7 +17,7 @@
 import h5py
 
 from dlio_benchmark.common.constants import MODULE_DATA_READER
-from dlio_benchmark.utils.utility import Profile
+from dlio_benchmark.utils.utility import Profile, dft_ai
 from dlio_benchmark.reader.reader_handler import FormatReader
 
 dlp = Profile(MODULE_DATA_READER)
@@ -47,7 +47,8 @@ class HDF5Reader(FormatReader):
         for idx in self.dataset_indices:
             image = self.open_file_map[filename][f'records_{idx}'][sample_index]
             image_size += image.nbytes
-        dlp.update(image_size=image_size)
+        dlp.update(image_size=image.nbytes)
+        dft_ai.update(image_size=image.nbytes)
 
     def next(self):
         for batch in super().next():
