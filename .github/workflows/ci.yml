@@ -475,7 +475,29 @@ jobs:
         run: |
           source ${VENV_PATH}/bin/activate
           rm -rf output data checkpoints
-          mpirun -np 2 pytest -k test_computation_time_distribution -v
+
+          # Old API (backward compatibility)
+          mpirun -np 2 pytest -k test_computation_time_distribution[uniform] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[normal] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[gamma] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[exp] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[poisson] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[normal_v2] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[normal_v3] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[normal_v4] -v
+
+          # SciPy API tests
+          mpirun -np 2 pytest -k test_computation_time_distribution[uniform_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[normal_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[gamma_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[lognormal_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[lognormal_scipy_with_loc] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[weibull_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[pareto_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[beta_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[chi2_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[rayleigh_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[logistic_scipy] -v
           rm -rf data
       - name: test_llama_8b
         run: |

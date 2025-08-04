@@ -601,57 +601,183 @@ Time Configuration
 
 The time configuration is crucial for the emulation. Here, we are able to specify distribution of the time configuration.
 
-For example, to specify distribution of the computation time, one can specify the configuration as ``dictionary`` with the following format:
+For example, to specify distribution of the computation time, one can specify the configuration with the following format.
 
+DLIO supports multiple parameter styles for distributions:
 
-* Normal Distribution
+1. **Old API**: Direct numeric values for constant computation time (scalar values) and additional APIs for backward compatibility
+2. **SciPy API**: Parameter names matching SciPy's statistical distributions
+
+Constant Value
+-----------------------
+
+You can specify a constant value directly:
 
 .. code-block:: yaml
+
+   # Old API - constant computation time
+   computation_time: 1.5
+
+Normal Distribution
+-------------------
+
+.. code-block:: yaml
+
+   # SciPy API
+   computation_time:
+      loc: 1.0    
+      scale: 0.1
+      type: normal
+
+   # Additional API
    computation_time:
       mean: 1.0
       stdev: 0.1
       type: normal
 
-   # or
-
+   # or just mean
    computation_time:
       mean: 1.0
 
-   # or
-
+   # or mean with stdev
    computation_time:
       mean: 1.0
       stdev: 0.1
 
-* Uniform Distribution
+Uniform Distribution
+--------------------
 
 .. code-block:: yaml
+
+   # SciPy API
+   computation_time:
+      loc: 0.5      # start of interval
+      scale: 1.0    # width of interval (max = loc + scale)
+      type: uniform
+
+   # Old API
    computation_time:
       min: 0.5
       max: 1.5
       type: uniform
 
-* Gamma Distribution
+Gamma Distribution
+------------------
 
 .. code-block:: yaml
+
+   # SciPy API
    computation_time:
-      shape: 1.0
-      scale: 1.0
+      a: 2.0        # shape parameter
+      scale: 1.0    # scale parameter
       type: gamma
 
-* Exponential Distribution
+Exponential Distribution
+------------------------
 
 .. code-block:: yaml
+
    computation_time:
       scale: 1.0
       type: exponential
 
-* Poisson Distribution
+Poisson Distribution
+--------------------
 
 .. code-block:: yaml
+
    computation_time:
-      lam: 1.0
+      lam: 3.0      # lambda parameter
       type: poisson
+
+Lognormal Distribution
+----------------------
+
+.. code-block:: yaml
+
+   # SciPy API
+   computation_time:
+      s: 1.0        # shape parameter (sigma)
+      scale: 1.0    # scale parameter
+      loc: 0.0      # location parameter (optional, default: 0)
+      type: lognormal
+
+Beta Distribution
+-----------------
+
+.. code-block:: yaml
+
+   # SciPy API
+   computation_time:
+      a: 2.0        # alpha parameter
+      b: 3.0        # beta parameter
+      type: beta
+
+Weibull Distribution
+--------------------
+
+.. code-block:: yaml
+
+   # SciPy API
+   computation_time:
+      c: 1.5        # shape parameter in SciPy
+      type: weibull
+
+Pareto Distribution
+-------------------
+
+.. code-block:: yaml
+
+   # SciPy API
+   computation_time:
+      b: 2.0        # shape parameter in SciPy
+      type: pareto
+
+Chi-squared Distribution
+------------------------
+
+.. code-block:: yaml
+
+   # SciPy API
+   computation_time:
+      df: 3.0       # degrees of freedom in SciPy
+      loc: 0.0      # location shift in SciPy (optional, default: 0.0)
+      scale: 1.0    # scale factor in SciPy (optional, default: 1.0)
+      type: chi2
+
+Rayleigh Distribution
+---------------------
+
+.. code-block:: yaml
+
+   # SciPy API
+   computation_time:
+      loc: 0.0      # location shift in SciPy (optional, default: 0.0)
+      scale: 1.5    # scale parameter in SciPy (optional, default: 1.0)
+      type: rayleigh
+
+Logistic Distribution
+---------------------
+
+.. code-block:: yaml
+
+   # SciPy API
+   computation_time:
+      loc: 2.0      # location parameter in SciPy (optional, default: 0.0)
+      scale: 0.5    # scale parameter in SciPy (optional, default: 1.0)
+      type: logistic
+
+.. note::
+
+   **Parameter Priority**: When multiple parameter styles are mixed, the precedence order is:
+   
+   1. **Old API** (highest priority) - for backward compatibility
+   2. **SciPy API** (lower priority) - for scipy-based parameter fitting
+
+.. attention::
+
+   The new distributions (lognormal, beta, weibull, pareto, chi2, rayleigh, logistic) are only available using SciPy parameter conventions. 
+   They do not have old API equivalents.
 
 How to create a DLIO configuration YAML file
 =============================================

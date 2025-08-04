@@ -609,6 +609,7 @@ def test_custom_storage_root_train(fmt, framework) -> None:
     finalize()
 
 compute_time_distributions = {
+    # Backward compatibility API
     "uniform": {"type": "uniform", "min": 1.0, "max": 2.0},
     "normal": {"type": "normal", "mean": 1.0, "stdev": 1.0},
     "gamma": {"type": "gamma", "shape": 1.0, "scale": 1.0},
@@ -616,7 +617,20 @@ compute_time_distributions = {
     "poisson": {"type": "poisson", "lam": 1.0},
     "normal_v2": {"mean": 1.0}, # mean, dist: normal
     "normal_v3": {"mean": 1.0, "stdev": 1.0}, # mean, stdev, dist: normal
-    "normal_v4": 2.0, # mean, dist: normal
+    "normal_v4": 2.0, # scalar value
+    
+    # SciPy API tests
+    "uniform_scipy": {"type": "uniform", "loc": 0.5, "scale": 1.5},  # [0.5, 2.0]
+    "normal_scipy": {"type": "normal", "loc": 1.0, "scale": 0.5},
+    "gamma_scipy": {"type": "gamma", "a": 2.0, "scale": 0.5},
+    "lognormal_scipy": {"type": "lognormal", "s": 0.5, "scale": 1.0},
+    "lognormal_scipy_with_loc": {"type": "lognormal", "s": 0.3, "scale": 2.0, "loc": 0.5},
+    "weibull_scipy": {"type": "weibull", "c": 1.5},
+    "pareto_scipy": {"type": "pareto", "b": 2.0},
+    "beta_scipy": {"type": "beta", "a": 2.0, "b": 3.0},
+    "chi2_scipy": {"type": "chi2", "df": 3.0, "loc": 0.0, "scale": 1.0},
+    "rayleigh_scipy": {"type": "rayleigh", "loc": 0.0, "scale": 1.5},
+    "logistic_scipy": {"type": "logistic", "loc": 2.0, "scale": 0.5},
 }
 
 @pytest.mark.timeout(60, method="thread")
@@ -646,7 +660,8 @@ def test_computation_time_distribution(request, dist) -> None:
         cfg = compose(config_name='config',
                       overrides=['++workload.workflow.train=True', \
                                  '++workload.workflow.generate_data=True', \
-                                 '++workload.train.epochs=4'] + compute_time_overrides)
+                                 '++workload.train.epochs=1', \
+                                 "++workload.dataset.num_files_eval=0"] + compute_time_overrides)
         benchmark = run_benchmark(cfg)
         if not request.config.is_dftracer_initialized:
             request.config.is_dftracer_initialized = True
