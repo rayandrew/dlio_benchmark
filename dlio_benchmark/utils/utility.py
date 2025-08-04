@@ -334,22 +334,189 @@ def get_trace_name(output_folder, use_pid=False):
     if use_pid:
         val = f"-{os.getpid()}"
     return f"{output_folder}/trace-{DLIOMPI.get_instance().rank()}-of-{DLIOMPI.get_instance().size()}{val}.pfw"
+
+
+def _convert_to_numpy_params(dist_type, config):
+    """
+    Convert distribution parameters to numpy-compatible parameters.
+    Priority: Additional API (backward compatibility) > NumPy API > SciPy API
+    
+    Args:
+        dist_type (str): The distribution type
+        config (dict): Configuration with distribution parameters
         
-def sleep(config):
+    Returns:
+        dict: Configuration with numpy-compatible parameters
+    """
+    numpy_config = {"type": dist_type}
+    
+    if dist_type == "normal":
+        # Priority: Additional API (mean, stdev) > NumPy API (loc, scale) > SciPy API (loc, scale)
+        if "mean" in config:
+            numpy_config["loc"] = config["mean"]
+        elif "loc" in config:
+            numpy_config["loc"] = config["loc"]
+            
+        if "stdev" in config:
+            numpy_config["scale"] = config["stdev"]
+        elif "scale" in config:
+            numpy_config["scale"] = config["scale"]
+        elif "std" in config:
+            numpy_config["scale"] = config["std"]
+            
+    elif dist_type == "uniform":
+        # Parameter precedence: min/max > low/high > loc/scale (Additional API > NumPy > SciPy)
+        if "min" in config and "max" in config:
+            # Additional API (backward compatibility)
+            numpy_config["low"] = config["min"]
+            numpy_config["high"] = config["max"]
+        elif "low" in config and "high" in config:
+            # NumPy API
+            numpy_config["low"] = config["low"]
+            numpy_config["high"] = config["high"]
+        elif "loc" in config and "scale" in config:
+            # SciPy API
+            numpy_config["low"] = config["loc"]
+            numpy_config["high"] = config["loc"] + config["scale"]
+        else:
+            # Fallback with precedence
+            if "min" in config:
+                numpy_config["low"] = config["min"]
+            elif "low" in config:
+                numpy_config["low"] = config["low"]
+            elif "loc" in config:
+                numpy_config["low"] = config["loc"]
+            else:
+                numpy_config["low"] = 0.0
+                
+            if "max" in config:
+                numpy_config["high"] = config["max"]
+            elif "high" in config:
+                numpy_config["high"] = config["high"]
+            elif "loc" in config and "scale" in config:
+                numpy_config["high"] = config["loc"] + config["scale"]
+            else:
+                numpy_config["high"] = 1.0
+            
+    elif dist_type == "gamma":
+        # Parameter precedence: shape > a (Additional API > SciPy)
+        if "shape" in config:
+            # Additional API / NumPy (backward compatibility)
+            numpy_config["shape"] = config["shape"]
+        elif "a" in config:
+            # SciPy API
+            numpy_config["shape"] = config["a"]
+            
+        # scale is consistent across all APIs
+        if "scale" in config:
+            numpy_config["scale"] = config["scale"]
+            
+    elif dist_type == "exponential":
+        # scale is consistent across all APIs (Additional API, SciPy, NumPy)
+        if "scale" in config:
+            numpy_config["scale"] = config["scale"]
+            
+    elif dist_type == "poisson":
+        # lam is consistent across all APIs (Additional API, SciPy, NumPy)
+        if "lam" in config:
+            numpy_config["lam"] = config["lam"]
+            
+    elif dist_type == "lognormal":
+        # Parameter precedence: NumPy API > SciPy API (no Additional API for lognormal)
+        # NumPy: mean (of underlying normal), sigma (std of underlying normal)
+        # SciPy: s (sigma), loc (location shift), scale (scale factor)
+        
+        if "mean" in config and "sigma" in config:
+            # NumPy API
+            numpy_config["mean"] = config["mean"]
+            numpy_config["sigma"] = config["sigma"]
+            numpy_config["loc"] = config.get("loc", 0.0)
+        elif "s" in config:
+            # SciPy API 
+            numpy_config["sigma"] = config["s"]
+            if "scale" in config:
+                numpy_config["mean"] = np.log(config["scale"])
+            else:
+                numpy_config["mean"] = 0.0
+            numpy_config["loc"] = config.get("loc", 0.0)
+        elif "sigma" in config:
+            # Fallback with sigma parameter
+            numpy_config["sigma"] = config["sigma"]
+            if "scale" in config:
+                numpy_config["mean"] = np.log(config["scale"])
+            else:
+                numpy_config["mean"] = 0.0
+            numpy_config["loc"] = config.get("loc", 0.0)
+        
+    elif dist_type == "beta":
+        # scipy/numpy: a (alpha), b (beta)
+        if "a" in config:
+            numpy_config["a"] = config["a"]
+        if "b" in config:
+            numpy_config["b"] = config["b"]
+            
+    elif dist_type == "weibull":
+        # scipy: c (shape)
+        # numpy: a (shape)
+        if "a" in config:
+            # numpy-style
+            numpy_config["a"] = config["a"]
+        elif "c" in config:
+            # scipy-style
+            numpy_config["a"] = config["c"]
+            
+    elif dist_type == "pareto":
+        # scipy: b (shape)
+        # numpy: a (shape)
+        if "a" in config:
+            # numpy-style
+            numpy_config["a"] = config["a"]
+        elif "b" in config:
+            # scipy-style
+            numpy_config["a"] = config["b"]
+    
+    return numpy_config
+
+
+def sleep(config, dry_run=False):
     sleep_time = 0.0
     if isinstance(config, dict) and len(config) > 0:
         if "type" in config:
-            if config["type"] == "normal":
-                sleep_time = np.random.normal(config["mean"], config["stdev"])
-            elif config["type"] == "uniform":
-                sleep_time = np.random.uniform(config["min"], config["max"])
-            elif config["type"] == "gamma":
-                sleep_time = np.random.gamma(config["shape"], config["scale"])
-            elif config["type"] == "exponential":
-                sleep_time = np.random.exponential(config["scale"])
-            elif config["type"] == "poisson":
-                sleep_time = np.random.poisson(config["lam"])
+            dist_type = config["type"]
+            # Convert to numpy-compatible parameters
+            numpy_config = _convert_to_numpy_params(dist_type, config)
+            
+            if dist_type == "normal":
+                if "loc" in numpy_config and "scale" in numpy_config:
+                    sleep_time = np.random.normal(numpy_config["loc"], numpy_config["scale"])
+            elif dist_type == "uniform":
+                if "low" in numpy_config and "high" in numpy_config:
+                    sleep_time = np.random.uniform(numpy_config["low"], numpy_config["high"])
+            elif dist_type == "gamma":
+                if "shape" in numpy_config and "scale" in numpy_config:
+                    sleep_time = np.random.gamma(numpy_config["shape"], numpy_config["scale"])
+            elif dist_type == "exponential":
+                if "scale" in numpy_config:
+                    sleep_time = np.random.exponential(numpy_config["scale"])
+            elif dist_type == "lognormal":
+                if "sigma" in numpy_config:
+                    mean = numpy_config.get("mean", 0.0)
+                    loc = numpy_config.get("loc", 0.0)
+                    sleep_time = loc + np.random.lognormal(mean, numpy_config["sigma"])
+            elif dist_type == "beta":
+                if "a" in numpy_config and "b" in numpy_config:
+                    sleep_time = np.random.beta(numpy_config["a"], numpy_config["b"])
+            elif dist_type == "weibull":
+                if "a" in numpy_config:
+                    sleep_time = np.random.weibull(numpy_config["a"])
+            elif dist_type == "pareto":
+                if "a" in numpy_config:
+                    sleep_time = np.random.pareto(numpy_config["a"])
+            elif dist_type == "poisson":
+                if "lam" in numpy_config:
+                    sleep_time = np.random.poisson(numpy_config["lam"])
         else:
+            # Legacy support for configurations without explicit type
             if "mean" in config:
                 if "stdev" in config:
                     sleep_time = np.random.normal(config["mean"], config["stdev"])
@@ -357,7 +524,8 @@ def sleep(config):
                     sleep_time = config["mean"]
     elif isinstance(config, (int, float)):
         sleep_time = config
+    
     sleep_time = abs(sleep_time)
-    if sleep_time > 0.0:
+    if sleep_time > 0.0 and not dry_run:
         base_sleep(sleep_time)
     return sleep_time
