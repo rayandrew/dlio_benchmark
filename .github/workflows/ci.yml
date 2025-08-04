@@ -305,13 +305,9 @@ jobs:
           mpirun -np 2 pytest -k test_computation_time_distribution[weibull_scipy] -v
           mpirun -np 2 pytest -k test_computation_time_distribution[pareto_scipy] -v
           mpirun -np 2 pytest -k test_computation_time_distribution[beta_scipy] -v
-
-          # NumPy API tests
-          mpirun -np 2 pytest -k test_computation_time_distribution[uniform_numpy] -v
-          mpirun -np 2 pytest -k test_computation_time_distribution[lognormal_numpy] -v
-          mpirun -np 2 pytest -k test_computation_time_distribution[weibull_numpy] -v
-          mpirun -np 2 pytest -k test_computation_time_distribution[pareto_numpy] -v
-          mpirun -np 2 pytest -k test_computation_time_distribution[beta_numpy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[chi2_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[rayleigh_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[logistic_scipy] -v
           rm -rf data
       - name: test_llama_8b
         run: |

@@ -609,7 +609,7 @@ def test_custom_storage_root_train(fmt, framework) -> None:
     finalize()
 
 compute_time_distributions = {
-    # Old API (backward compatibility)
+    # Backward compatibility API
     "uniform": {"type": "uniform", "min": 1.0, "max": 2.0},
     "normal": {"type": "normal", "mean": 1.0, "stdev": 1.0},
     "gamma": {"type": "gamma", "shape": 1.0, "scale": 1.0},
@@ -617,7 +617,7 @@ compute_time_distributions = {
     "poisson": {"type": "poisson", "lam": 1.0},
     "normal_v2": {"mean": 1.0}, # mean, dist: normal
     "normal_v3": {"mean": 1.0, "stdev": 1.0}, # mean, stdev, dist: normal
-    "normal_v4": 2.0, # mean, dist: normal
+    "normal_v4": 2.0, # scalar value
     
     # SciPy API tests
     "uniform_scipy": {"type": "uniform", "loc": 0.5, "scale": 1.5},  # [0.5, 2.0]
@@ -628,13 +628,9 @@ compute_time_distributions = {
     "weibull_scipy": {"type": "weibull", "c": 1.5},
     "pareto_scipy": {"type": "pareto", "b": 2.0},
     "beta_scipy": {"type": "beta", "a": 2.0, "b": 3.0},
-    
-    # NumPy API tests  
-    "uniform_numpy": {"type": "uniform", "low": 0.5, "high": 2.0},
-    "lognormal_numpy": {"type": "lognormal", "mean": 0.0, "sigma": 0.5},
-    "weibull_numpy": {"type": "weibull", "a": 1.5},
-    "pareto_numpy": {"type": "pareto", "a": 2.0},
-    "beta_numpy": {"type": "beta", "a": 2.0, "b": 3.0},
+    "chi2_scipy": {"type": "chi2", "df": 3.0, "loc": 0.0, "scale": 1.0},
+    "rayleigh_scipy": {"type": "rayleigh", "loc": 0.0, "scale": 1.5},
+    "logistic_scipy": {"type": "logistic", "loc": 2.0, "scale": 0.5},
 }
 
 @pytest.mark.timeout(60, method="thread")
