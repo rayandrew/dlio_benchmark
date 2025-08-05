@@ -385,7 +385,7 @@ def _convert_to_numpy_params(dist_type, config):
             
     elif dist_type == "gamma":
         # Backward compatibility: shape, scale
-        # SciPy: a (shape), scale
+        # SciPy: a (shape), loc, scale
         if "shape" in config:
             # Backward compatibility API
             numpy_config["shape"] = config["shape"]
@@ -396,11 +396,15 @@ def _convert_to_numpy_params(dist_type, config):
         # scale is consistent across both APIs
         if "scale" in config:
             numpy_config["scale"] = config["scale"]
+        if "loc" in config:
+            numpy_config["loc"] = config["loc"]
             
     elif dist_type == "exponential":
-        # scale is consistent across both APIs
+        # SciPy: loc, scale
         if "scale" in config:
             numpy_config["scale"] = config["scale"]
+        if "loc" in config:
+            numpy_config["loc"] = config["loc"]
             
     elif dist_type == "poisson":
         # lam is consistent across both APIs
@@ -408,7 +412,7 @@ def _convert_to_numpy_params(dist_type, config):
             numpy_config["lam"] = config["lam"]
             
     elif dist_type == "lognormal":
-        # SciPy only: s (sigma), loc (location shift), scale (scale factor)
+        # SciPy: s (sigma), loc (location shift), scale (scale factor)
         if "s" in config:
             numpy_config["sigma"] = config["s"]
         elif "sigma" in config:
@@ -422,21 +426,33 @@ def _convert_to_numpy_params(dist_type, config):
         numpy_config["loc"] = config.get("loc", 0.0)
         
     elif dist_type == "beta":
-        # SciPy: a (alpha), b (beta)
+        # SciPy: a (alpha), b (beta), loc, scale
         if "a" in config:
             numpy_config["a"] = config["a"]
         if "b" in config:
             numpy_config["b"] = config["b"]
+        if "loc" in config:
+            numpy_config["loc"] = config["loc"]
+        if "scale" in config:
+            numpy_config["scale"] = config["scale"]
             
     elif dist_type == "weibull":
-        # SciPy: c (shape)
+        # SciPy: c (shape), loc, scale
         if "c" in config:
             numpy_config["a"] = config["c"]
+        if "loc" in config:
+            numpy_config["loc"] = config["loc"]
+        if "scale" in config:
+            numpy_config["scale"] = config["scale"]
             
     elif dist_type == "pareto":
-        # SciPy: b (shape)
+        # SciPy: b (shape), loc, scale
         if "b" in config:
             numpy_config["a"] = config["b"]
+        if "loc" in config:
+            numpy_config["loc"] = config["loc"]
+        if "scale" in config:
+            numpy_config["scale"] = config["scale"]
             
     elif dist_type == "chi2":
         # SciPy: df (degrees of freedom), loc, scale
@@ -480,10 +496,12 @@ def sleep(config, dry_run=False):
                     sleep_time = np.random.uniform(numpy_config["low"], numpy_config["high"])
             elif dist_type == "gamma":
                 if "shape" in numpy_config and "scale" in numpy_config:
-                    sleep_time = np.random.gamma(numpy_config["shape"], numpy_config["scale"])
+                    loc = numpy_config.get("loc", 0.0)
+                    sleep_time = loc + np.random.gamma(numpy_config["shape"], numpy_config["scale"])
             elif dist_type == "exponential":
                 if "scale" in numpy_config:
-                    sleep_time = np.random.exponential(numpy_config["scale"])
+                    loc = numpy_config.get("loc", 0.0)
+                    sleep_time = loc + np.random.exponential(numpy_config["scale"])
             elif dist_type == "lognormal":
                 if "sigma" in numpy_config:
                     mean = numpy_config.get("mean", 0.0)
@@ -491,13 +509,19 @@ def sleep(config, dry_run=False):
                     sleep_time = loc + np.random.lognormal(mean, numpy_config["sigma"])
             elif dist_type == "beta":
                 if "a" in numpy_config and "b" in numpy_config:
-                    sleep_time = np.random.beta(numpy_config["a"], numpy_config["b"])
+                    loc = numpy_config.get("loc", 0.0)
+                    scale = numpy_config.get("scale", 1.0)
+                    sleep_time = loc + scale * np.random.beta(numpy_config["a"], numpy_config["b"])
             elif dist_type == "weibull":
                 if "a" in numpy_config:
-                    sleep_time = np.random.weibull(numpy_config["a"])
+                    loc = numpy_config.get("loc", 0.0)
+                    scale = numpy_config.get("scale", 1.0)
+                    sleep_time = loc + scale * np.random.weibull(numpy_config["a"])
             elif dist_type == "pareto":
                 if "a" in numpy_config:
-                    sleep_time = np.random.pareto(numpy_config["a"])
+                    loc = numpy_config.get("loc", 0.0)
+                    scale = numpy_config.get("scale", 1.0)
+                    sleep_time = loc + scale * np.random.pareto(numpy_config["a"])
             elif dist_type == "chi2":
                 if "df" in numpy_config:
                     loc = numpy_config.get("loc", 0.0)
