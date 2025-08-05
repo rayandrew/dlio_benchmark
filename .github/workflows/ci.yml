@@ -490,11 +490,16 @@ jobs:
           mpirun -np 2 pytest -k test_computation_time_distribution[uniform_scipy] -v
           mpirun -np 2 pytest -k test_computation_time_distribution[normal_scipy] -v
           mpirun -np 2 pytest -k test_computation_time_distribution[gamma_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[gamma_scipy_with_loc] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[exponential_scipy_with_loc] -v
           mpirun -np 2 pytest -k test_computation_time_distribution[lognormal_scipy] -v
           mpirun -np 2 pytest -k test_computation_time_distribution[lognormal_scipy_with_loc] -v
           mpirun -np 2 pytest -k test_computation_time_distribution[weibull_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[weibull_scipy_with_loc_scale] -v
           mpirun -np 2 pytest -k test_computation_time_distribution[pareto_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[pareto_scipy_with_loc_scale] -v
           mpirun -np 2 pytest -k test_computation_time_distribution[beta_scipy] -v
+          mpirun -np 2 pytest -k test_computation_time_distribution[beta_scipy_with_loc_scale] -v
           mpirun -np 2 pytest -k test_computation_time_distribution[chi2_scipy] -v
           mpirun -np 2 pytest -k test_computation_time_distribution[rayleigh_scipy] -v
           mpirun -np 2 pytest -k test_computation_time_distribution[logistic_scipy] -v

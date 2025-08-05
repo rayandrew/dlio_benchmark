@@ -28,8 +28,24 @@ The characteristics of a workload is specified through a YAML file. This file wi
     
   reader: 
     data_loader: pytorch
-    batch_size: 4
-    read_threads: 4
+    batch_size: Beta Distribution
+-----------------
+
+.. code-block:: yaml
+
+   # SciPy API (basic)
+   computation_time:
+      a: 2.0        # alpha parameter in SciPy
+      b: 3.0        # beta parameter in SciPy
+      type: beta
+
+   # SciPy API (with location and scale)
+   computation_time:
+      a: 2.0        # alpha parameter in SciPy
+      b: 3.0        # beta parameter in SciPy
+      loc: 1.0      # location shift in SciPy (optional, default: 0.0)
+      scale: 2.0    # scale factor in SciPy (optional, default: 1.0)
+      type: beta_threads: 4
     file_shuffle: seed
     sample_shuffle: seed
 
@@ -672,6 +688,13 @@ Gamma Distribution
       scale: 1.0    # scale parameter
       type: gamma
 
+   # SciPy API with location shift
+   computation_time:
+      a: 2.0        # shape parameter
+      scale: 1.0    # scale parameter
+      loc: 0.5      # location shift (optional, default: 0.0)
+      type: gamma
+
 Exponential Distribution
 ------------------------
 
@@ -679,6 +702,12 @@ Exponential Distribution
 
    computation_time:
       scale: 1.0
+      type: exponential
+
+   # SciPy API with location shift
+   computation_time:
+      scale: 2.0    # scale parameter
+      loc: 0.5      # location shift (optional, default: 0.0)
       type: exponential
 
 Poisson Distribution
@@ -723,6 +752,13 @@ Weibull Distribution
       c: 1.5        # shape parameter in SciPy
       type: weibull
 
+   # SciPy API with location and scale
+   computation_time:
+      c: 1.5        # shape parameter in SciPy
+      loc: 1.0      # location shift (optional, default: 0.0)
+      scale: 2.0    # scale factor (optional, default: 1.0)
+      type: weibull
+
 Pareto Distribution
 -------------------
 
@@ -731,6 +767,13 @@ Pareto Distribution
    # SciPy API
    computation_time:
       b: 2.0        # shape parameter in SciPy
+      type: pareto
+
+   # SciPy API with location and scale
+   computation_time:
+      b: 2.0        # shape parameter in SciPy
+      loc: 1.0      # location shift (optional, default: 0.0)
+      scale: 2.0    # scale factor (optional, default: 1.0)
       type: pareto
 
 Chi-squared Distribution
