@@ -87,7 +87,7 @@ class dlio_sampler(Sampler):
         self.rank = rank
         self.num_samples = num_samples
         self.epochs = epochs
-        samples_per_proc = int(math.ceil(num_samples/size)) 
+        samples_per_proc = int(math.floor(num_samples/size))
         start_sample = self.rank * samples_per_proc
         end_sample = (self.rank + 1) * samples_per_proc - 1
         if end_sample > num_samples - 1:

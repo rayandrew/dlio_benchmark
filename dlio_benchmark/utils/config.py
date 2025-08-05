@@ -340,6 +340,10 @@ class ConfigArguments:
     def reset():
         ConfigArguments.__instance = None
 
+    def calc_samples_sum(self, total_samples: int):
+        total_samples_divisible = int(math.floor(total_samples / self.comm_size)) * self.comm_size
+        return total_samples_divisible * (total_samples_divisible - 1) // 2
+
     @dlp.log
     def derive_configurations(self, file_list_train=None, file_list_eval=None):
         if self.checkpoint_mechanism == CheckpointMechanismType.NONE:
@@ -374,13 +378,17 @@ class ConfigArguments:
             self.num_files_train = len(file_list_train)
             self.total_samples_train = self.num_samples_per_file * len(self.file_list_train)
             self.total_samples_eval = self.num_samples_per_file * len(self.file_list_eval)
-            self.train_sample_index_sum = self.total_samples_train * (self.total_samples_train - 1) // 2
-            self.eval_sample_index_sum = self.total_samples_eval * (self.total_samples_eval - 1) // 2
+            # self.train_sample_index_sum = self.total_samples_train * (self.total_samples_train - 1) // 2
+            # self.eval_sample_index_sum = self.total_samples_eval * (self.total_samples_eval - 1) // 2
+            self.train_sample_index_sum = self.calc_samples_sum(self.total_samples_train)
+            self.eval_sample_index_sum = self.calc_samples_sum(self.total_samples_eval)
             self.required_samples = self.comm_size * self.batch_size
             if self.read_threads > 0:
                 self.required_samples *= self.read_threads
-            self.training_steps = int(math.ceil(self.total_samples_train / self.batch_size / self.comm_size))
-            self.eval_steps = int(math.ceil(self.total_samples_eval / self.batch_size_eval / self.comm_size))
+            # self.training_steps = int(math.ceil(self.total_samples_train / self.batch_size / self.comm_size))
+            # self.eval_steps = int(math.ceil(self.total_samples_eval / self.batch_size_eval / self.comm_size))
+            self.training_steps = int(math.floor(self.total_samples_train / self.batch_size / self.comm_size))
+            self.eval_steps = int(math.floor(self.total_samples_eval / self.batch_size_eval / self.comm_size))
         if self.data_loader_sampler is None and self.data_loader_classname is None:
             if self.data_loader == DataLoaderType.TENSORFLOW:
                 self.data_loader_sampler = DataLoaderSampler.ITERATIVE
@@ -500,7 +508,7 @@ class ConfigArguments:
         samples_sum = 0
         if num_files > 0:
             end_sample = total_samples - 1
-            samples_per_proc = int(math.ceil(total_samples/self.comm_size)) 
+            samples_per_proc = int(math.floor(total_samples/self.comm_size)) 
             start_sample = self.my_rank * samples_per_proc
             end_sample = (self.my_rank + 1) * samples_per_proc - 1
             if end_sample > total_samples - 1:
