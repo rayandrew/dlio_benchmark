@@ -58,7 +58,6 @@ class SyntheticReader(FormatReader):
             step += 1
             if step > total:
                 break
-            dft_ai.data.item.start()
 
     @dft_ai.data.item
     def read_index(self, image_idx, step):
