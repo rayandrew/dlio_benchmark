@@ -61,7 +61,6 @@ class SyntheticReader(FormatReader):
 
     @dft_ai.data.item
     def read_index(self, image_idx, step):
-        dlp.update(step=step)
         dft_ai.update(step=step)
         return self._args.resized_image
 
