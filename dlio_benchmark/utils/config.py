@@ -180,15 +180,15 @@ class ConfigArguments:
     record_element_dtype: ClassVar[np.dtype] = np.dtype("uint8")
 
     ## dataset: hdf5-only
-    num_dataset_per_record: int = 1
+    num_dset_per_record: int = 1
     chunk_dims: ClassVar[List[int]] = []
     max_shape: ClassVar[List[int]] = []
 
     ## reader
-    transformed_sample: ClassVar[List[int]] = []
-    transformed_sample_type: str = "uint8" # user provided
+    transformed_record_dims: ClassVar[List[int]] = []
+    transformed_record_element_type: str = "uint8" # user provided
     ## reader -- derived
-    transformed_sample_dtype: ClassVar[np.dtype] = np.dtype("uint8")
+    transformed_record_element_dtype: ClassVar[np.dtype] = np.dtype("uint8")
 
     def __init__(self):
         """ Virtually private constructor. """
@@ -325,8 +325,8 @@ class ConfigArguments:
 
         # HDF5 specific checks        
         if len(self.record_dims) > 0:
-            if self.record_dims[0] % self.num_dataset_per_record != 0:
-                raise ValueError("hdf5.num_dataset_per_record should be divisible by record_dims[0]")
+            if self.record_dims[0] % self.num_dset_per_record != 0:
+                raise ValueError("hdf5.num_dset_per_record should be divisible by record_dims[0]")
 
         # Image specific checks
         if self.format in [FormatType.JPEG, FormatType.PNG]:
@@ -335,6 +335,10 @@ class ConfigArguments:
                 raise ValueError(f"{self.format} format requires record_element_type to be np.uint8, this should be automatically set. Please contact developers if this message appears.")
             if len(self.record_dims) > 2:
                 raise ValueError(f"{self.format} format does not support more than 2 dimensions, but got {len(self.record_dims)} dimensions.")
+
+        # check if both record_dims and record_length_stdev are set
+        if len(self.record_dims) > 0 and self.record_length_stdev > 0:
+            raise ValueError("Both record_dims and record_length_bytes_stdev are set. This is not supported. If you need stdev on your records, please specify record_length_bytes with record_length_bytes_stdev instead.")
 
     @staticmethod
     def reset():
@@ -366,10 +370,10 @@ class ConfigArguments:
             self.max_dimension = int(math.sqrt(self.record_length_resize))
 
         if (file_list_train is not None and file_list_eval is not None):
-            if self.transformed_sample is not None and len(self.transformed_sample) > 0:
-                self.logger.output(f"Generating random tensor with shape {self.transformed_sample} and dtype {self.transformed_sample_dtype}")
+            if self.transformed_record_dims is not None and len(self.transformed_record_dims) > 0:
+                self.logger.output(f"Generating random tensor with shape {self.transformed_record_dims} and dtype {self.transformed_record_element_dtype}")
                 rng = np.random.default_rng()
-                self.resized_image = gen_random_tensor(shape=self.transformed_sample, dtype=self.transformed_sample_dtype, rng=rng)
+                self.resized_image = gen_random_tensor(shape=self.transformed_record_dims, dtype=self.transformed_record_element_dtype, rng=rng)
             else:
                 self.resized_image = np.random.randint(255, size=(self.max_dimension, self.max_dimension), dtype=np.uint8)
             self.file_list_train = file_list_train
@@ -455,7 +459,7 @@ class ConfigArguments:
         # hdf5 specific derivations
         self.record_length = np.prod(self.record_dims) * self.record_element_bytes
 
-        self.transformed_sample_dtype = np.dtype(self.transformed_sample_type)
+        self.transformed_record_element_dtype = np.dtype(self.transformed_record_element_type)
 
     @dlp.log
     def build_sample_map_iter(self, file_list, total_samples, epoch_number):
@@ -839,8 +843,8 @@ def LoadConfig(args, config):
         if 'hdf5' in config['dataset']:
             if 'chunk_dims' in config['dataset']['hdf5']:
                 args.chunk_dims = tuple(config['dataset']['hdf5']['chunk_dims'])
-            if 'num_dataset_per_record' in config['dataset']['hdf5']:
-                args.num_dataset_per_record = config['dataset']['hdf5']['num_dataset_per_record']
+            if 'num_dset_per_record' in config['dataset']['hdf5']:
+                args.num_dset_per_record = config['dataset']['hdf5']['num_dset_per_record']
             if 'max_shape' in config['dataset']['hdf5']:
                 args.max_shape = list(config['dataset']['hdf5']['max_shape'])
 
@@ -904,10 +908,10 @@ def LoadConfig(args, config):
             args.preprocess_time["stdev"] = reader['preprocess_time_stdev']
         if 'pin_memory' in reader:
             args.pin_memory = reader['pin_memory']
-        if 'transformed_sample' in reader:
-            args.transformed_sample = list(reader['transformed_sample'])
-        if 'transformed_sample_type' in reader:
-            args.transformed_sample_type = reader['transformed_sample_type']
+        if 'transformed_record_dims' in reader:
+            args.transformed_record_dims = list(reader['transformed_record_dims'])
+        if 'transformed_record_element_type' in reader:
+            args.transformed_record_element_type = reader['transformed_record_element_type']
 
     # training relevant setting
     if 'train' in config:
