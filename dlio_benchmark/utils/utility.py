@@ -315,12 +315,35 @@ def get_trace_name(output_folder, use_pid=False):
     return f"{output_folder}/trace-{DLIOMPI.get_instance().rank()}-of-{DLIOMPI.get_instance().size()}{val}.pfw"
 
 
+def _apply_bounds(sleep_time, numpy_config, fallback_value=None):
+    """
+    Apply bounds to a generated sleep time value.
+    Uses min_bound (defaults to 0) and max_bound (if provided) from config.
+    """
+    min_bound = numpy_config.get("min_bound", 0.0)  # Default to 0 if not provided
+    max_bound = numpy_config.get("max_bound", None)  # Only use if explicitly provided
+    
+    # Apply bounds if specified
+    if sleep_time < min_bound:
+        sleep_time = fallback_value if fallback_value is not None else min_bound
+    if max_bound is not None and sleep_time > max_bound:
+        sleep_time = fallback_value if fallback_value is not None else max_bound
+        
+    return sleep_time
+
+
 def _convert_to_numpy_params(dist_type, config):
     """
     Convert distribution parameters to numpy-compatible parameters.
     Priority: Backward compatibility API > SciPy API
     """
     numpy_config = {"type": dist_type}
+    
+    # Copy bounds configuration if present
+    if "min_bound" in config:
+        numpy_config["min_bound"] = config["min_bound"]
+    if "max_bound" in config:
+        numpy_config["max_bound"] = config["max_bound"]
     
     if dist_type == "normal":
         # Backward compatibility: mean, stdev
@@ -470,53 +493,95 @@ def sleep(config, dry_run=False):
             if dist_type == "normal":
                 if "loc" in numpy_config and "scale" in numpy_config:
                     sleep_time = np.random.normal(numpy_config["loc"], numpy_config["scale"])
+                    # Apply bounds with mean as fallback
+                    sleep_time = _apply_bounds(sleep_time, numpy_config, numpy_config["loc"])
             elif dist_type == "uniform":
                 if "low" in numpy_config and "high" in numpy_config:
                     sleep_time = np.random.uniform(numpy_config["low"], numpy_config["high"])
+                    # Apply bounds with midpoint as fallback
+                    midpoint = (numpy_config["low"] + numpy_config["high"]) / 2
+                    sleep_time = _apply_bounds(sleep_time, numpy_config, midpoint)
             elif dist_type == "gamma":
                 if "shape" in numpy_config and "scale" in numpy_config:
                     loc = numpy_config.get("loc", 0.0)
                     sleep_time = loc + np.random.gamma(numpy_config["shape"], numpy_config["scale"])
+                    # Apply bounds with mode (shape-1)*scale + loc as fallback for shape > 1
+                    if numpy_config["shape"] > 1:
+                        mode = (numpy_config["shape"] - 1) * numpy_config["scale"] + loc
+                    else:
+                        mode = loc  # Mode is at loc for shape <= 1
+                    sleep_time = _apply_bounds(sleep_time, numpy_config, mode)
             elif dist_type == "exponential":
                 if "scale" in numpy_config:
                     loc = numpy_config.get("loc", 0.0)
                     sleep_time = loc + np.random.exponential(numpy_config["scale"])
+                    # Apply bounds with mean (scale + loc) as fallback
+                    mean = numpy_config["scale"] + loc
+                    sleep_time = _apply_bounds(sleep_time, numpy_config, mean)
             elif dist_type == "lognormal":
                 if "sigma" in numpy_config:
                     mean = numpy_config.get("mean", 0.0)
                     loc = numpy_config.get("loc", 0.0)
                     sleep_time = loc + np.random.lognormal(mean, numpy_config["sigma"])
+                    # Apply bounds with median exp(mean) + loc as fallback
+                    median = np.exp(mean) + loc
+                    sleep_time = _apply_bounds(sleep_time, numpy_config, median)
             elif dist_type == "beta":
                 if "a" in numpy_config and "b" in numpy_config:
                     loc = numpy_config.get("loc", 0.0)
                     scale = numpy_config.get("scale", 1.0)
                     sleep_time = loc + scale * np.random.beta(numpy_config["a"], numpy_config["b"])
+                    # Apply bounds with mean a/(a+b)*scale + loc as fallback
+                    a, b = numpy_config["a"], numpy_config["b"]
+                    mean = a / (a + b) * scale + loc
+                    sleep_time = _apply_bounds(sleep_time, numpy_config, mean)
             elif dist_type == "weibull":
                 if "a" in numpy_config:
                     loc = numpy_config.get("loc", 0.0)
                     scale = numpy_config.get("scale", 1.0)
                     sleep_time = loc + scale * np.random.weibull(numpy_config["a"])
+                    # Apply bounds with mean approximation scale*0.8862 + loc as fallback
+                    # (0.8862 is approximately gamma(1+1/1) for common shape values)
+                    mean_approx = scale * 0.8862 + loc
+                    sleep_time = _apply_bounds(sleep_time, numpy_config, mean_approx)
             elif dist_type == "pareto":
                 if "a" in numpy_config:
                     loc = numpy_config.get("loc", 0.0)
                     scale = numpy_config.get("scale", 1.0)
                     sleep_time = loc + scale * np.random.pareto(numpy_config["a"])
+                    # Apply bounds with mean scale*a/(a-1) + loc as fallback (for a > 1)
+                    a = numpy_config["a"]
+                    if a > 1:
+                        mean = scale * a / (a - 1) + loc
+                    else:
+                        mean = loc + scale  # fallback when mean is undefined
+                    sleep_time = _apply_bounds(sleep_time, numpy_config, mean)
             elif dist_type == "chi2":
                 if "df" in numpy_config:
                     loc = numpy_config.get("loc", 0.0)
                     scale = numpy_config.get("scale", 1.0)
                     sleep_time = loc + scale * np.random.chisquare(numpy_config["df"])
+                    # Apply bounds with mean df*scale + loc as fallback
+                    mean = numpy_config["df"] * scale + loc
+                    sleep_time = _apply_bounds(sleep_time, numpy_config, mean)
             elif dist_type == "rayleigh":
                 loc = numpy_config.get("loc", 0.0)
                 scale = numpy_config.get("scale", 1.0)
                 sleep_time = loc + np.random.rayleigh(scale)
+                # Apply bounds with mean scale*sqrt(pi/2) + loc as fallback
+                mean = scale * np.sqrt(np.pi / 2) + loc
+                sleep_time = _apply_bounds(sleep_time, numpy_config, mean)
             elif dist_type == "logistic":
                 loc = numpy_config.get("loc", 0.0)
                 scale = numpy_config.get("scale", 1.0)
                 sleep_time = np.random.logistic(loc, scale)
+                # Apply bounds with mean (loc) as fallback
+                sleep_time = _apply_bounds(sleep_time, numpy_config, loc)
             elif dist_type == "poisson":
                 if "lam" in numpy_config:
                     sleep_time = np.random.poisson(numpy_config["lam"])
+                    # Apply bounds with mean (lam) as fallback
+                    sleep_time = _apply_bounds(sleep_time, numpy_config, numpy_config["lam"])
         else:
             # Legacy support for configurations without explicit type
             if "mean" in config:
