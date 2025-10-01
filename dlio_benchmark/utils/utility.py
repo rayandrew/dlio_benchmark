@@ -30,58 +30,12 @@ import numpy as np
 
 from dlio_benchmark.common.enumerations import MPIState
 
-try:
-    from dftracer.logger import (
-        dftracer as PerfTrace,
-        dft_fn as Profile,
-        ai as dft_ai,
-        DFTRACER_ENABLE
-    )
-except ImportError:  # noqa: E722
-    # Compact fallback classes when dftracer is not available
-    # fmt: off
-    class _NoOp:
-        """Universal no-op class that accepts any method call and returns self or identity function"""
-        def __init__(self, *args, **kwargs): pass
-        def __call__(self, fn=None, *args, **kwargs): return fn if callable(fn) else self
-        def __getattr__(self, name): return self
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-        def log(self, fn=None, *args, **kwargs): return fn if callable(fn) else lambda f: f
-        def log_init(self, fn=None, *args, **kwargs): return fn if callable(fn) else lambda f: f
-        def log_static(self, fn=None, *args, **kwargs): return fn if callable(fn) else lambda f: f
-        def iter(self, func, *args, **kwargs): return func
-        def update(self, *args, **kwargs): pass
-        def flush(self): pass
-        def reset(self): pass
-        def enable(self): pass
-        def disable(self): pass
-        def derive(self, name): return self
-        def init(self, fn=None, *args, **kwargs): return self
-        def create_children(self, names): pass
-        def get_instance(self): return self
-        def initialize_log(self, *args, **kwargs): return self
-        def enter_event(self): pass
-        def exit_event(self): pass
-        def log_event(self, *args, **kwargs): pass
-        def finalize(self): pass
-        def get_time(self): return 0
-        @property
-        def cat(self): return ""
-        @property 
-        def name(self): return ""
-        @property
-        def type(self): return None
-        @property
-        def logger(self): return self
-    # fmt: on
-
-    Profile = _NoOp
-    PerfTrace = _NoOp
-    dftracer = _NoOp
-    dft_ai = _NoOp()
-
-    DFTRACER_ENABLE = False
+from dftracer.logger import (
+    dftracer as PerfTrace,  # noqa: F401
+    dft_fn as Profile,  # noqa: F401
+    ai as dft_ai,  # noqa: F401
+    DFTRACER_ENABLE  # noqa: F401
+)
 
 LOG_TS_FORMAT = "%Y-%m-%dT%H:%M:%S.%f"
 
@@ -316,169 +270,74 @@ def get_trace_name(output_folder, use_pid=False):
 
 
 def _apply_bounds(sleep_time, numpy_config, fallback_value=None):
-    """
-    Apply bounds to a generated sleep time value.
-    Uses min_bound (defaults to 0) and max_bound (if provided) from config.
-    """
-    min_bound = numpy_config.get("min_bound", 0.0)  # Default to 0 if not provided
-    max_bound = numpy_config.get("max_bound", None)  # Only use if explicitly provided
-    
-    # Apply bounds if specified
+    min_bound = numpy_config.get("min_bound", 0.0)
+    max_bound = numpy_config.get("max_bound", None)
+
+    # prevents negative sleep times
     if sleep_time < min_bound:
-        sleep_time = fallback_value if fallback_value is not None else min_bound
+        sleep_time = fallback_value if fallback_value is not None and fallback_value >= min_bound else min_bound
+
     if max_bound is not None and sleep_time > max_bound:
-        sleep_time = fallback_value if fallback_value is not None else max_bound
-        
+        sleep_time = fallback_value if fallback_value is not None and fallback_value <= max_bound else max_bound
+
     return sleep_time
 
 
 def _convert_to_numpy_params(dist_type, config):
-    """
-    Convert distribution parameters to numpy-compatible parameters.
-    Priority: Backward compatibility API > SciPy API
-    """
     numpy_config = {"type": dist_type}
-    
-    # Copy bounds configuration if present
+
     if "min_bound" in config:
         numpy_config["min_bound"] = config["min_bound"]
     if "max_bound" in config:
         numpy_config["max_bound"] = config["max_bound"]
-    
+
     if dist_type == "normal":
-        # Backward compatibility: mean, stdev
-        # SciPy: loc (mean), scale (std)
-        if "mean" in config:
-            numpy_config["loc"] = config["mean"]
-        elif "loc" in config:
+        if "loc" in config:
             numpy_config["loc"] = config["loc"]
-            
-        if "stdev" in config:
-            numpy_config["scale"] = config["stdev"]
-        elif "scale" in config:
+        elif "mean" in config:
+            numpy_config["loc"] = config["mean"]
+
+        if "scale" in config:
             numpy_config["scale"] = config["scale"]
+        elif "stdev" in config:
+            numpy_config["scale"] = config["stdev"]
             
     elif dist_type == "uniform":
-        # Backward compatibility: min, max
-        # SciPy: loc (start), scale (width) -> high = loc + scale
-        if "min" in config and "max" in config:
-            # Backward compatibility API
-            numpy_config["low"] = config["min"]
-            numpy_config["high"] = config["max"]
-        elif "loc" in config and "scale" in config:
-            # SciPy API
-            numpy_config["low"] = config["loc"]
-            numpy_config["high"] = config["loc"] + config["scale"]
+        if "low" in config and "high" in config:
+            numpy_config["low"] = config["low"]
+            numpy_config["high"] = config["high"]
         else:
-            # Fallback with precedence: Backward compatibility > SciPy
-            if "min" in config:
-                numpy_config["low"] = config["min"]
-            elif "loc" in config:
-                numpy_config["low"] = config["loc"]
-            else:
-                numpy_config["low"] = 0.0
-                
-            if "max" in config:
-                numpy_config["high"] = config["max"]
-            elif "loc" in config and "scale" in config:
-                numpy_config["high"] = config["loc"] + config["scale"]
-            else:
-                numpy_config["high"] = 1.0
-            
+            numpy_config["low"] = config.get("low", 0.0)
+            numpy_config["high"] = config.get("high", 1.0)
+
     elif dist_type == "gamma":
-        # Backward compatibility: shape, scale
-        # SciPy: a (shape), loc, scale
         if "shape" in config:
-            # Backward compatibility API
             numpy_config["shape"] = config["shape"]
-        elif "a" in config:
-            # SciPy API
-            numpy_config["shape"] = config["a"]
-            
-        # scale is consistent across both APIs
         if "scale" in config:
             numpy_config["scale"] = config["scale"]
-        if "loc" in config:
-            numpy_config["loc"] = config["loc"]
-            
+
     elif dist_type == "exponential":
-        # SciPy: loc, scale
         if "scale" in config:
             numpy_config["scale"] = config["scale"]
-        if "loc" in config:
-            numpy_config["loc"] = config["loc"]
-            
+
     elif dist_type == "poisson":
-        # lam is consistent across both APIs
         if "lam" in config:
             numpy_config["lam"] = config["lam"]
-            
+
     elif dist_type == "lognormal":
-        # SciPy: s (sigma), loc (location shift), scale (scale factor)
-        if "s" in config:
-            numpy_config["sigma"] = config["s"]
-        elif "sigma" in config:
+        if "sigma" in config:
             numpy_config["sigma"] = config["sigma"]
-            
-        if "scale" in config:
-            numpy_config["mean"] = np.log(config["scale"])
+        if "mean" in config:
+            numpy_config["mean"] = config["mean"]
         else:
             numpy_config["mean"] = 0.0
-            
-        numpy_config["loc"] = config.get("loc", 0.0)
-        
-    elif dist_type == "beta":
-        # SciPy: a (alpha), b (beta), loc, scale
-        if "a" in config:
-            numpy_config["a"] = config["a"]
-        if "b" in config:
-            numpy_config["b"] = config["b"]
-        if "loc" in config:
-            numpy_config["loc"] = config["loc"]
-        if "scale" in config:
-            numpy_config["scale"] = config["scale"]
-            
+
     elif dist_type == "weibull":
-        # SciPy: c (shape), loc, scale
-        if "c" in config:
-            numpy_config["a"] = config["c"]
-        if "loc" in config:
-            numpy_config["loc"] = config["loc"]
+        if "shape" in config:
+            numpy_config["shape"] = config["shape"]
         if "scale" in config:
             numpy_config["scale"] = config["scale"]
             
-    elif dist_type == "pareto":
-        # SciPy: b (shape), loc, scale
-        if "b" in config:
-            numpy_config["a"] = config["b"]
-        if "loc" in config:
-            numpy_config["loc"] = config["loc"]
-        if "scale" in config:
-            numpy_config["scale"] = config["scale"]
-            
-    elif dist_type == "chi2":
-        # SciPy: df (degrees of freedom), loc, scale
-        if "df" in config:
-            numpy_config["df"] = config["df"]
-        if "loc" in config:
-            numpy_config["loc"] = config["loc"]
-        if "scale" in config:
-            numpy_config["scale"] = config["scale"]
-            
-    elif dist_type == "rayleigh":
-        # SciPy: loc, scale
-        if "loc" in config:
-            numpy_config["loc"] = config["loc"]
-        if "scale" in config:
-            numpy_config["scale"] = config["scale"]
-            
-    elif dist_type == "logistic":
-        # SciPy: loc, scale
-        if "loc" in config:
-            numpy_config["loc"] = config["loc"]
-        if "scale" in config:
-            numpy_config["scale"] = config["scale"]
-    
     return numpy_config
 
 
@@ -487,101 +346,69 @@ def sleep(config, dry_run=False):
     if isinstance(config, dict) and len(config) > 0:
         if "type" in config:
             dist_type = config["type"]
-            # convert to numpy-compatible parameters
             numpy_config = _convert_to_numpy_params(dist_type, config)
             
             if dist_type == "normal":
                 if "loc" in numpy_config and "scale" in numpy_config:
                     sleep_time = np.random.normal(numpy_config["loc"], numpy_config["scale"])
-                    # Apply bounds with mean as fallback
                     sleep_time = _apply_bounds(sleep_time, numpy_config, numpy_config["loc"])
             elif dist_type == "uniform":
                 if "low" in numpy_config and "high" in numpy_config:
                     sleep_time = np.random.uniform(numpy_config["low"], numpy_config["high"])
-                    # Apply bounds with midpoint as fallback
                     midpoint = (numpy_config["low"] + numpy_config["high"]) / 2
                     sleep_time = _apply_bounds(sleep_time, numpy_config, midpoint)
             elif dist_type == "gamma":
                 if "shape" in numpy_config and "scale" in numpy_config:
-                    loc = numpy_config.get("loc", 0.0)
-                    sleep_time = loc + np.random.gamma(numpy_config["shape"], numpy_config["scale"])
-                    # Apply bounds with mode (shape-1)*scale + loc as fallback for shape > 1
+                    sleep_time = np.random.gamma(numpy_config["shape"], numpy_config["scale"])
                     if numpy_config["shape"] > 1:
-                        mode = (numpy_config["shape"] - 1) * numpy_config["scale"] + loc
+                        mode = (numpy_config["shape"] - 1) * numpy_config["scale"]
                     else:
-                        mode = loc  # Mode is at loc for shape <= 1
+                        mode = 0.0
                     sleep_time = _apply_bounds(sleep_time, numpy_config, mode)
             elif dist_type == "exponential":
                 if "scale" in numpy_config:
-                    loc = numpy_config.get("loc", 0.0)
-                    sleep_time = loc + np.random.exponential(numpy_config["scale"])
-                    # Apply bounds with mean (scale + loc) as fallback
-                    mean = numpy_config["scale"] + loc
+                    sleep_time = np.random.exponential(numpy_config["scale"])
+                    mean = numpy_config["scale"]
                     sleep_time = _apply_bounds(sleep_time, numpy_config, mean)
             elif dist_type == "lognormal":
                 if "sigma" in numpy_config:
                     mean = numpy_config.get("mean", 0.0)
-                    loc = numpy_config.get("loc", 0.0)
-                    sleep_time = loc + np.random.lognormal(mean, numpy_config["sigma"])
-                    # Apply bounds with median exp(mean) + loc as fallback
-                    median = np.exp(mean) + loc
+                    sleep_time = np.random.lognormal(mean, numpy_config["sigma"])
+                    median = np.exp(mean)
                     sleep_time = _apply_bounds(sleep_time, numpy_config, median)
-            elif dist_type == "beta":
-                if "a" in numpy_config and "b" in numpy_config:
-                    loc = numpy_config.get("loc", 0.0)
-                    scale = numpy_config.get("scale", 1.0)
-                    sleep_time = loc + scale * np.random.beta(numpy_config["a"], numpy_config["b"])
-                    # Apply bounds with mean a/(a+b)*scale + loc as fallback
-                    a, b = numpy_config["a"], numpy_config["b"]
-                    mean = a / (a + b) * scale + loc
-                    sleep_time = _apply_bounds(sleep_time, numpy_config, mean)
             elif dist_type == "weibull":
-                if "a" in numpy_config:
-                    loc = numpy_config.get("loc", 0.0)
-                    scale = numpy_config.get("scale", 1.0)
-                    sleep_time = loc + scale * np.random.weibull(numpy_config["a"])
-                    # Apply bounds with mean approximation scale*0.8862 + loc as fallback
-                    # (0.8862 is approximately gamma(1+1/1) for common shape values)
-                    mean_approx = scale * 0.8862 + loc
-                    sleep_time = _apply_bounds(sleep_time, numpy_config, mean_approx)
-            elif dist_type == "pareto":
-                if "a" in numpy_config:
-                    loc = numpy_config.get("loc", 0.0)
-                    scale = numpy_config.get("scale", 1.0)
-                    sleep_time = loc + scale * np.random.pareto(numpy_config["a"])
-                    # Apply bounds with mean scale*a/(a-1) + loc as fallback (for a > 1)
-                    a = numpy_config["a"]
-                    if a > 1:
-                        mean = scale * a / (a - 1) + loc
-                    else:
-                        mean = loc + scale  # fallback when mean is undefined
-                    sleep_time = _apply_bounds(sleep_time, numpy_config, mean)
-            elif dist_type == "chi2":
-                if "df" in numpy_config:
-                    loc = numpy_config.get("loc", 0.0)
-                    scale = numpy_config.get("scale", 1.0)
-                    sleep_time = loc + scale * np.random.chisquare(numpy_config["df"])
-                    # Apply bounds with mean df*scale + loc as fallback
-                    mean = numpy_config["df"] * scale + loc
-                    sleep_time = _apply_bounds(sleep_time, numpy_config, mean)
-            elif dist_type == "rayleigh":
-                loc = numpy_config.get("loc", 0.0)
-                scale = numpy_config.get("scale", 1.0)
-                sleep_time = loc + np.random.rayleigh(scale)
-                # Apply bounds with mean scale*sqrt(pi/2) + loc as fallback
-                mean = scale * np.sqrt(np.pi / 2) + loc
-                sleep_time = _apply_bounds(sleep_time, numpy_config, mean)
-            elif dist_type == "logistic":
-                loc = numpy_config.get("loc", 0.0)
-                scale = numpy_config.get("scale", 1.0)
-                sleep_time = np.random.logistic(loc, scale)
-                # Apply bounds with mean (loc) as fallback
-                sleep_time = _apply_bounds(sleep_time, numpy_config, loc)
+                if "shape" in numpy_config and "scale" in numpy_config:
+                    sleep_time = numpy_config["scale"] * np.random.weibull(numpy_config["shape"])
+                    sleep_time = _apply_bounds(sleep_time, numpy_config, numpy_config["scale"])
             elif dist_type == "poisson":
                 if "lam" in numpy_config:
                     sleep_time = np.random.poisson(numpy_config["lam"])
-                    # Apply bounds with mean (lam) as fallback
                     sleep_time = _apply_bounds(sleep_time, numpy_config, numpy_config["lam"])
+            elif dist_type == "mixture":
+                if "components" in config and "n_components" in config:
+                    components = config["components"]
+                    n_components = config["n_components"]
+
+                    if len(components) > 0:
+                        weights = [comp.get("weight", 1.0/n_components) for comp in components]
+                        total_weight = sum(weights)
+                        normalized_weights = [w/total_weight for w in weights]
+
+                        component_idx = np.random.choice(len(components), p=normalized_weights)
+                        selected_component = components[component_idx]
+
+                        component_config = selected_component.get("params", {})
+
+                        if "min_bound" in config:
+                            component_config["min_bound"] = config["min_bound"]
+                        if "max_bound" in config:
+                            component_config["max_bound"] = config["max_bound"]
+
+                        sleep_time = sleep(component_config, dry_run=dry_run)
+                    else:
+                        sleep_time = 0.0
+                else:
+                    sleep_time = 0.0
         else:
             # Legacy support for configurations without explicit type
             if "mean" in config:
@@ -592,7 +419,7 @@ def sleep(config, dry_run=False):
     elif isinstance(config, (int, float)):
         sleep_time = config
     
-    sleep_time = abs(sleep_time)
+    sleep_time = max(0.0, sleep_time)
     if sleep_time > 0.0 and not dry_run:
         base_sleep(sleep_time)
     return sleep_time

@@ -134,6 +134,15 @@ class TorchDataLoader(BaseDataLoader):
                     'prefetch_factor': prefetch_factor}
             if torch.__version__ != '1.3.1':       
                 kwargs['persistent_workers'] = True
+
+        batch_size = self.batch_size
+        if self._args.disable_collation:
+            if batch_size > 1:
+                self.logger.warning(f"Cannot disable collation since batch_size is {batch_size}")
+
+            if batch_size == 1:
+                batch_size = None
+
         if torch.__version__ == '1.3.1':
             if 'prefetch_factor' in kwargs:
                 del kwargs['prefetch_factor']

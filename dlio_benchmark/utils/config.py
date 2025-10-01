@@ -17,6 +17,7 @@
 import importlib
 import inspect
 import hydra
+import re
 
 import logging
 
@@ -143,6 +144,10 @@ class ConfigArguments:
     multiprocessing_context: str = "fork"
     pin_memory: bool = True
     odirect: bool = False
+    disable_collation: bool = False
+
+    original_num_files_train: int = 0
+    original_num_files_eval: int = 0
 
     # derived fields
     required_samples: int = 1
@@ -274,7 +279,7 @@ class ConfigArguments:
     @dlp.log
     def validate(self):
         """ validate whether the parameters are set correctly"""
-        if (self.do_profiling == True) and (self.profiler == Profiler('darshan')):
+        if self.do_profiling and self.profiler == Profiler('darshan'):
             if ('LD_PRELOAD' not in os.environ or os.environ["LD_PRELOAD"].find("libdarshan") == -1):
                 raise Exception("Please set darshan runtime library in LD_PRELOAD")
         if self.format is FormatType.TFRECORD and (self.data_loader is DataLoaderType.PYTORCH):
@@ -290,7 +295,7 @@ class ConfigArguments:
                 f"Expected {self.num_files_eval} evaluation files but {len(self.file_list_eval)} found. Ensure data was generated correctly.")
         if self.data_loader_classname is not None and self.data_loader_sampler is None:
             raise Exception(
-                f"For custom data loaders workload.reader.data_loader_sampler needs to be defined as iter or index.")
+                "For custom data loaders workload.reader.data_loader_sampler needs to be defined as iter or index.")
         if self.read_threads > 1:
             import platform
             if platform.system() in ["Linux", "Windows"]:
@@ -340,6 +345,13 @@ class ConfigArguments:
         if len(self.record_dims) > 0 and self.record_length_stdev > 0:
             raise ValueError("Both record_dims and record_length_bytes_stdev are set. This is not supported. If you need stdev on your records, please specify record_length_bytes with record_length_bytes_stdev instead.")
 
+        # check num files
+        if self.num_file_train > 0 and self.num_files_train < self.original_num_files_train:
+            raise ValueError(f"Number of training files {self.num_files_train} cannot be less than original number of training files {self.original_num_files_train}")
+
+        if self.num_file_eval > 0 and self.num_files_eval < self.original_num_files_eval:
+            raise ValueError(f"Number of evaluation files {self.num_files_eval} cannot be less than original number of evaluation files {self.original_num_files_eval}")
+
     @staticmethod
     def reset():
         ConfigArguments.__instance = None
@@ -376,10 +388,24 @@ class ConfigArguments:
                 self.resized_image = gen_random_tensor(shape=self.transformed_record_dims, dtype=self.transformed_record_element_dtype, rng=rng)
             else:
                 self.resized_image = np.random.randint(255, size=(self.max_dimension, self.max_dimension), dtype=np.uint8)
+
+            # infer original_num_files_train and original_num_files_eval from file_list_train and file_list_eval
+            match = re.search(r'_of_(\d+)\.', file_list_train[0])
+            if match:
+              self.original_num_files_train = int(match.group(1))
+            else:
+              self.original_num_files_train = len(file_list_train)
+
+            match = re.search(r'_of_(\d+)\.', file_list_eval[0])
+            if match:
+              self.original_num_files_eval = int(match.group(1))
+            else:
+              self.original_num_files_eval = len(file_list_eval)
+
             self.file_list_train = file_list_train
             self.file_list_eval = file_list_eval
-            self.num_files_eval = len(file_list_eval)
-            self.num_files_train = len(file_list_train)
+            # self.num_files_eval = len(file_list_eval)
+            # self.num_files_train = len(file_list_train)
             self.total_samples_train = self.num_samples_per_file * len(self.file_list_train)
             self.total_samples_eval = self.num_samples_per_file * len(self.file_list_eval)
             # self.train_sample_index_sum = self.total_samples_train * (self.total_samples_train - 1) // 2
