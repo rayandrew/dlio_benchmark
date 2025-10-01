@@ -17,7 +17,6 @@
 import importlib
 import inspect
 import hydra
-import re
 
 import logging
 
@@ -346,11 +345,11 @@ class ConfigArguments:
             raise ValueError("Both record_dims and record_length_bytes_stdev are set. This is not supported. If you need stdev on your records, please specify record_length_bytes with record_length_bytes_stdev instead.")
 
         # check num files
-        if self.num_file_train > 0 and self.num_files_train < self.original_num_files_train:
-            raise ValueError(f"Number of training files {self.num_files_train} cannot be less than original number of training files {self.original_num_files_train}")
+        if self.num_files_train > 0 and self.num_files_train > self.original_num_files_train:
+            raise ValueError(f"Number of training files {self.num_files_train} cannot be greater than original number of training files {self.original_num_files_train}")
 
-        if self.num_file_eval > 0 and self.num_files_eval < self.original_num_files_eval:
-            raise ValueError(f"Number of evaluation files {self.num_files_eval} cannot be less than original number of evaluation files {self.original_num_files_eval}")
+        if self.num_files_eval > 0 and self.num_files_eval > self.original_num_files_eval:
+            raise ValueError(f"Number of evaluation files {self.num_files_eval} cannot be greater than original number of evaluation files {self.original_num_files_eval}")
 
     @staticmethod
     def reset():
@@ -390,17 +389,20 @@ class ConfigArguments:
                 self.resized_image = np.random.randint(255, size=(self.max_dimension, self.max_dimension), dtype=np.uint8)
 
             # infer original_num_files_train and original_num_files_eval from file_list_train and file_list_eval
-            match = re.search(r'_of_(\d+)\.', file_list_train[0])
-            if match:
-              self.original_num_files_train = int(match.group(1))
-            else:
-              self.original_num_files_train = len(file_list_train)
+            self.original_num_files_train = 0
+            if len(file_list_train) > 0:
+                try:
+                    self.original_num_files_train = int(file_list_train[0].split('_of_')[1].split('.')[0])
+                except (IndexError, ValueError):
+                    self.original_num_files_train = len(file_list_train)
 
-            match = re.search(r'_of_(\d+)\.', file_list_eval[0])
-            if match:
-              self.original_num_files_eval = int(match.group(1))
-            else:
-              self.original_num_files_eval = len(file_list_eval)
+            self.original_num_files_eval = 0
+            if len(file_list_eval) > 0:
+                try:
+                    self.original_num_files_eval = int(file_list_eval[0].split('_of_')[1].split('.')[0])
+                except (IndexError, ValueError):
+                    self.original_num_files_eval = len(file_list_eval)
+            
 
             self.file_list_train = file_list_train
             self.file_list_eval = file_list_eval
