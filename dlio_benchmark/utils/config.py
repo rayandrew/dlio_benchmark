@@ -143,10 +143,12 @@ class ConfigArguments:
     multiprocessing_context: str = "fork"
     pin_memory: bool = True
     odirect: bool = False
+    persistent_workers: bool = False
     disable_collation: bool = False
 
     original_num_files_train: int = 0
     original_num_files_eval: int = 0
+    accumulate_gradient_steps: int = 1
 
     # derived fields
     required_samples: int = 1
@@ -366,6 +368,8 @@ class ConfigArguments:
                 self.checkpoint_mechanism = CheckpointMechanismType.TF_SAVE
             elif self.framework == FrameworkType.PYTORCH:
                 self.checkpoint_mechanism = CheckpointMechanismType.PT_SAVE
+        
+        self.transformed_record_element_dtype = np.dtype(self.transformed_record_element_type)
 
         record_dims_length = len(self.record_dims)
         if record_dims_length > 0:
@@ -486,8 +490,6 @@ class ConfigArguments:
 
         # hdf5 specific derivations
         self.record_length = np.prod(self.record_dims) * self.record_element_bytes
-
-        self.transformed_record_element_dtype = np.dtype(self.transformed_record_element_type)
 
     @dlp.log
     def build_sample_map_iter(self, file_list, total_samples, epoch_number):
@@ -936,6 +938,10 @@ def LoadConfig(args, config):
             args.preprocess_time["stdev"] = reader['preprocess_time_stdev']
         if 'pin_memory' in reader:
             args.pin_memory = reader['pin_memory']
+        if 'persistent_workers' in reader:
+            args.persistent_workers = reader['persistent_workers']
+        if 'disable_collation' in reader:
+            args.disable_collation = reader['disable_collation']
         if 'transformed_record_dims' in reader:
             args.transformed_record_dims = list(reader['transformed_record_dims'])
         if 'transformed_record_element_type' in reader:
@@ -963,8 +969,35 @@ def LoadConfig(args, config):
             args.computation_time = computation_time if computation_time is not None else {}
         if 'computation_time_stdev' in config['train']:
             args.computation_time["stdev"] = config['train']['computation_time_stdev']
+
+        if 'forward_computation_time' in config['train']:
+            forward_computation_time = {}
+            if isinstance(config['train']['forward_computation_time'], dict):
+                forward_computation_time = config['train']['forward_computation_time']
+            elif isinstance(config['train']['forward_computation_time'], (int, float)):
+                forward_computation_time["mean"] = config['train']['forward_computation_time']
+            elif isinstance(config['train']['forward_computation_time'], DictConfig):
+                forward_computation_time = OmegaConf.to_container(config['train']['forward_computation_time'])
+            else:
+                args.forward_computation_time = config['train']['forward_computation_time']
+            args.forward_computation_time = forward_computation_time if forward_computation_time is not None else {}
+
+        if 'backward_computation_time' in config['train']:
+            backward_computation_time = {}
+            if isinstance(config['train']['backward_computation_time'], dict):
+                backward_computation_time = config['train']['backward_computation_time']
+            elif isinstance(config['train']['backward_computation_time'], (int, float)):
+                backward_computation_time["mean"] = config['train']['backward_computation_time']
+            elif isinstance(config['train']['backward_computation_time'], DictConfig):
+                backward_computation_time = OmegaConf.to_container(config['train']['backward_computation_time'])
+            else:
+                args.backward_computation_time = config['train']['backward_computation_time']
+            args.backward_computation_time = backward_computation_time if backward_computation_time is not None else {}
+
         if 'seed' in config['train']:
             args.seed = config['train']['seed']
+        if 'accumulate_gradient_steps' in config['train']:
+            args.accumulate_gradient_steps = config['train']['accumulate_gradient_steps']
 
     if 'evaluation' in config:
         args.eval_time = {}

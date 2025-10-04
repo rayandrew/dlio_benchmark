@@ -404,7 +404,7 @@ def sleep(config, dry_run=False):
                         if "max_bound" in config:
                             component_config["max_bound"] = config["max_bound"]
 
-                        sleep_time = sleep(component_config, dry_run=dry_run)
+                        sleep_time = sleep(component_config, dry_run=True)
                     else:
                         sleep_time = 0.0
                 else:

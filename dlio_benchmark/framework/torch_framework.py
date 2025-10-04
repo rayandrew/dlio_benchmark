@@ -82,8 +82,22 @@ class TorchFramework(Framework):
         return DummyTraceObject(string, step, r)
 
     @dft_ai.compute
-    def compute(self, batch, epoch_number, step, computation_time):
+    def compute(self, batch, epoch_number, step, computation_time, backward_computation_time=None, backward_sync=False):
+        if not backward_computation_time:
+            self.model(batch, backward_computation_time)
+            return
+        self.forward(batch, epoch_number, step, computation_time)
+        return self.backward(batch, epoch_number, step, backward_computation_time, backward_sync)
+
+    @dft_ai.compute.forward
+    def forward(self, batch, epoch_number, step, computation_time):
         return self.model(batch, computation_time)
+    
+    @dft_ai.compute.backward
+    def backward(self, batch, epoch_number, step, computation_time, backward_sync):
+        self.model(batch, computation_time)
+        if backward_sync:
+            self.comm.barrier()
 
     @dlp.log
     def get_loader(self, dataset_type=DatasetType.TRAIN):

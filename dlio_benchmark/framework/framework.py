@@ -20,12 +20,7 @@ from abc import ABC, abstractmethod
 from dlio_benchmark.common.enumerations import DatasetType
 from dlio_benchmark.data_loader.data_loader_factory import DataLoaderFactory
 from dlio_benchmark.storage.storage_factory import StorageFactory
-from dlio_benchmark.utils.utility import utcnow, DLIOMPI
-comm = DLIOMPI.get_instance().comm()
-
-import os
-import logging
-from multiprocessing import Process
+from dlio_benchmark.utils.utility import DLIOMPI
 
 from dlio_benchmark.utils.config import ConfigArguments
 from dlio_benchmark.utils.utility import sleep
@@ -45,6 +40,7 @@ class Framework(ABC):
     def __init__(self):
         self.args = ConfigArguments.get_instance()
         self.output_folder = self.args.output_folder
+        self.comm = DLIOMPI.get_instance().comm()
 
 
     @abstractmethod
@@ -75,7 +71,7 @@ class Framework(ABC):
         sleep(computation_time)
 
     @abstractmethod
-    def compute(self, batch, epoch_number, step, computation_time):
+    def compute(self, batch, epoch_number, step, computation_time, backward_computation_time=None, backward_sync=False):
         pass
 
     @abstractmethod

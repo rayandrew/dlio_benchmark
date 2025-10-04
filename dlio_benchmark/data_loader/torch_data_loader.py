@@ -113,10 +113,8 @@ class TorchDataLoader(BaseDataLoader):
         dataset = TorchDataset(self.format_type, self.dataset_type, self.epoch_number, self.num_samples,
                                self._args.read_threads, self.batch_size)
         sampler = dlio_sampler(self._args.my_rank, self._args.comm_size, self.num_samples, self._args.epochs)
-        if self._args.read_threads >= 1:
-            prefetch_factor = math.ceil(self._args.prefetch_size / self._args.read_threads)
-        else:
-            prefetch_factor = self._args.prefetch_size
+
+        prefetch_factor = self._args.prefetch_size
         if prefetch_factor > 0:
             if self._args.my_rank == 0:
                 self.logger.debug(
@@ -132,9 +130,12 @@ class TorchDataLoader(BaseDataLoader):
         else:
             kwargs={'multiprocessing_context':self._args.multiprocessing_context,
                     'prefetch_factor': prefetch_factor}
-            if torch.__version__ != '1.3.1':       
-                kwargs['persistent_workers'] = True
+            kwargs['persistent_workers'] = self._args.persistent_workers
+            # if torch.__version__ != '1.3.1':       
+            #     kwargs['persistent_workers'] = True
 
+        if self._args.my_rank == 0:
+            self.logger.output(f"{utcnow()} DataLoader kwargs: {kwargs}, batch_size: {self.batch_size}, num_workers: {self._args.read_threads}, pin_memory: {self._args.pin_memory}")
         batch_size = self.batch_size
         if self._args.disable_collation:
             if batch_size > 1:

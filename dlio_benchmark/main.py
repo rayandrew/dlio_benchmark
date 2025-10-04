@@ -51,6 +51,16 @@ dftracer_initialize = True
 dftracer_finalize   = True
 dtracer             = None
 
+def get_computation_time(config):
+    computation_time = None
+    if config.forward_computation_time:
+        if isinstance(config.forward_computation_time, dict) and len(config.forward_computation_time) > 0:
+            computation_time = config.forward_computation_time
+        elif isinstance(config.forward_computation_time, float) and config.forward_computation_time > 0:
+            computation_time = config.forward_computation_time
+        return computation_time
+    return config.computation_time
+
 class DLIOBenchmark(object):
     """
     The Benchmark represents the I/O behavior of deep learning applications.
@@ -344,14 +354,14 @@ class DLIOBenchmark(object):
                     self.stats.end_block(epoch, block, block_step - 1)
                 break
             self.stats.batch_loaded(epoch, overall_step, block)
-            computation_time = self.args.computation_time
+            computation_time = get_computation_time(self.args)
             if (isinstance(computation_time, dict) and len(computation_time) > 0) or (isinstance(computation_time, float) and  computation_time > 0):
                 self.framework.trace_object("Train", overall_step, 1)
+            backward_computation_time = self.args.backward_computation_time
+            backward_sync = (overall_step % self.args.accumulate_gradient_steps) == 0
             self.stats.start_compute()
-            self.framework.compute(batch, epoch, block_step, self.computation_time)
+            self.framework.compute(batch, epoch, block_step, computation_time, backward_computation_time=backward_computation_time, backward_sync=backward_sync)
             self.stats.batch_processed(epoch, overall_step, block)
-            # This is the barrier to simulate allreduce. It is required to simulate the actual workloads.
-            self.comm.barrier()
             if self.do_checkpoint and (
                     self.steps_between_checkpoints >= 0) and overall_step == self.next_checkpoint_step:
                 self.stats.end_block(epoch, block, block_step)
