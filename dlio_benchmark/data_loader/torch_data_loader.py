@@ -96,7 +96,7 @@ class dlio_sampler(Sampler):
 
 
     def __len__(self):
-        return self.num_samples
+        return len(self.indices)
 
     def __iter__(self):
         for sample in self.indices:
@@ -137,34 +137,42 @@ class TorchDataLoader(BaseDataLoader):
         if self._args.my_rank == 0:
             self.logger.output(f"{utcnow()} DataLoader kwargs: {kwargs}, batch_size: {self.batch_size}, num_workers: {self._args.read_threads}, pin_memory: {self._args.pin_memory}")
         batch_size = self.batch_size
+        drop_last = True
         if self._args.disable_collation:
             if batch_size > 1:
                 self.logger.warning(f"Cannot disable collation since batch_size is {batch_size}")
 
             if batch_size == 1:
                 batch_size = None
+                drop_last = False
+                if self._args.my_rank == 0:
+                    self.logger.output(f"{utcnow()} Collation is disabled and batch_size is 1.")
 
         if torch.__version__ == '1.3.1':
             if 'prefetch_factor' in kwargs:
                 del kwargs['prefetch_factor']
             self._dataset = DataLoader(dataset,
-                                       batch_size=self.batch_size,
+                                       batch_size=batch_size,
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
-                                       drop_last=True,
+                                       drop_last=drop_last,
                                        worker_init_fn=dataset.worker_init, 
                                        **kwargs)
         else: 
             self._dataset = DataLoader(dataset,
-                                       batch_size=self.batch_size,
+                                       batch_size=batch_size,
                                        sampler=sampler,
                                        num_workers=self._args.read_threads,
                                        pin_memory=self._args.pin_memory,
-                                       drop_last=True,
+                                       drop_last=drop_last,
                                        worker_init_fn=dataset.worker_init,
                                        **kwargs)  # 2 is the default value
-        self.logger.debug(f"{utcnow()} Rank {self._args.my_rank} will read {len(self._dataset) * self.batch_size} files")
+        if self._args.my_rank == 0:
+            if batch_size:
+                self.logger.debug(f"{utcnow()} Rank {self._args.my_rank} will read {len(self._dataset) * batch_size} files")
+            else:
+                self.logger.debug(f"{utcnow()} Rank {self._args.my_rank} will read {len(self._dataset)} files")
 
         # self._dataset.sampler.set_epoch(epoch_number)
 
