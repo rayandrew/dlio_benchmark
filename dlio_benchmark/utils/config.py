@@ -196,6 +196,12 @@ class ConfigArguments:
     ## reader -- derived
     transformed_record_element_dtype: ClassVar[np.dtype] = np.dtype("uint8")
 
+    ## train
+    first_computation_time: ClassVar[Dict[str, Any]] = {}
+    forward_computation_time: ClassVar[Dict[str, Any]] = {}
+    backward_computation_time: ClassVar[Dict[str, Any]] = {}
+    train_step_overhead_time: ClassVar[Dict[str, Any]] = {}
+
     def __init__(self):
         """ Virtually private constructor. """
         if ConfigArguments.__instance is not None:
@@ -303,7 +309,7 @@ class ConfigArguments:
                 import psutil
                 p = psutil.Process()
                 cores_available = len(p.cpu_affinity())
-                if cores_available < self.read_threads:
+                if cores_available < self.read_threads and self.my_rank == 0:
                     self.logger.warning(
                         f"Running DLIO with {self.read_threads} threads for I/O but core available {cores_available} "
                         f"are insufficient and can lead to lower performance.")
@@ -386,7 +392,8 @@ class ConfigArguments:
 
         if (file_list_train is not None and file_list_eval is not None):
             if self.transformed_record_dims is not None and len(self.transformed_record_dims) > 0:
-                self.logger.output(f"Generating random tensor with shape {self.transformed_record_dims} and dtype {self.transformed_record_element_dtype}")
+                if self.my_rank == 0:
+                    self.logger.output(f"Generating random tensor with shape {self.transformed_record_dims} and dtype {self.transformed_record_element_dtype}")
                 rng = np.random.default_rng()
                 self.resized_image = gen_random_tensor(shape=self.transformed_record_dims, dtype=self.transformed_record_element_dtype, rng=rng)
             else:
@@ -967,8 +974,21 @@ def LoadConfig(args, config):
             else:
                 args.computation_time = config['train']['computation_time']
             args.computation_time = computation_time if computation_time is not None else {}
+            args.first_computation_time = args.computation_time
         if 'computation_time_stdev' in config['train']:
             args.computation_time["stdev"] = config['train']['computation_time_stdev']
+
+        if 'first_computation_time' in config['train']:
+            first_computation_time = {}
+            if isinstance(config['train']['first_computation_time'], dict):
+                first_computation_time = config['train']['first_computation_time']
+            elif isinstance(config['train']['first_computation_time'], (int, float)):
+                first_computation_time["mean"] = config['train']['first_computation_time']
+            elif isinstance(config['train']['first_computation_time'], DictConfig):
+                first_computation_time = OmegaConf.to_container(config['train']['first_computation_time'])
+            else:
+                args.first_computation_time = config['train']['first_computation_time']
+            args.first_computation_time = first_computation_time if first_computation_time is not None else {}
 
         if 'forward_computation_time' in config['train']:
             forward_computation_time = {}
@@ -993,6 +1013,18 @@ def LoadConfig(args, config):
             else:
                 args.backward_computation_time = config['train']['backward_computation_time']
             args.backward_computation_time = backward_computation_time if backward_computation_time is not None else {}
+
+        if 'step_overhead_time' in config['train']:
+            train_step_overhead_time = {}
+            if isinstance(config['train']['step_overhead_time'], dict):
+                train_step_overhead_time = config['train']['step_overhead_time']
+            elif isinstance(config['train']['step_overhead_time'], (int, float)):
+                train_step_overhead_time["mean"] = config['train']['step_overhead_time']
+            elif isinstance(config['train']['step_overhead_time'], DictConfig):
+                train_step_overhead_time = OmegaConf.to_container(config['train']['step_overhead_time'])
+            else:
+                args.train_step_overhead_time = config['train']['step_overhead_time']
+            args.train_step_overhead_time = train_step_overhead_time if train_step_overhead_time is not None else {}
 
         if 'seed' in config['train']:
             args.seed = config['train']['seed']
