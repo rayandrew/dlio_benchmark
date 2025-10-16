@@ -19,8 +19,6 @@ import math
 from time import time
 import numpy as np
 
-import tqdm
-
 # Reduce TF and CUDA logging
 
 import hydra
@@ -28,6 +26,12 @@ from omegaconf import DictConfig
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
+
+if "OMP_PLACES" in os.environ:
+    del os.environ["OMP_PLACES"]
+if "OMP_PROC_BIND" in os.environ:
+    del os.environ["OMP_PROC_BIND"]
+
 # Remove PyTorch warning when libtorch_cuda_cu.so isn't found
 import warnings
 
@@ -36,9 +40,10 @@ warnings.filterwarnings("ignore", category=UserWarning)
 from dlio_benchmark.checkpointing.checkpointing_factory import CheckpointingFactory
 from dlio_benchmark.common.constants import MODULE_DLIO_BENCHMARK
 from dlio_benchmark.common.enumerations import DatasetType, MetadataType
-from dlio_benchmark.utils.utility import utcnow, DLIOMPI, Profile, dft_ai, DLIOLogger
+from dlio_benchmark.utils.utility import utcnow, DLIOMPI, Profile, dft_ai, DLIOLogger, sleep
 from dlio_benchmark.utils.statscounter import StatsCounter
 from dlio_benchmark.utils.config import LoadConfig, ConfigArguments, GetConfig
+from dlio_benchmark.utils.progress import Progress
 from dlio_benchmark.profiler.profiler_factory import ProfilerFactory
 from dlio_benchmark.framework.framework_factory import FrameworkFactory
 from dlio_benchmark.data_generator.generator_factory import GeneratorFactory
@@ -51,15 +56,16 @@ dftracer_initialize = True
 dftracer_finalize   = True
 dtracer             = None
 
-def get_computation_time(config):
-    computation_time = None
+def get_computation_time(config, step):
     if config.forward_computation_time:
         if isinstance(config.forward_computation_time, dict) and len(config.forward_computation_time) > 0:
-            computation_time = config.forward_computation_time
+            return config.forward_computation_time
         elif isinstance(config.forward_computation_time, float) and config.forward_computation_time > 0:
-            computation_time = config.forward_computation_time
-        return computation_time
-    return config.computation_time
+            return config.forward_computation_time
+    if step > 1:
+        return config.computation_time
+    else:
+        return config.first_computation_time
 
 class DLIOBenchmark(object):
     """
@@ -222,12 +228,14 @@ class DLIOBenchmark(object):
                 raise Exception(
                     "Not enough evaluation dataset is found; Please run the code with ++workload.workflow.generate_data=True")
             if (self.num_files_train < len(file_list_train)):
-                self.logger.warning(
-                    f"Number of files for training in {os.path.join(self.args.data_folder, f'{DatasetType.TRAIN}')} ({len(file_list_train)}) is more than requested ({self.num_files_train}). A subset of files will be used ")
+                if self.args.my_rank == 0:
+                    self.logger.warning(
+                        f"Number of files for training in {os.path.join(self.args.data_folder, f'{DatasetType.TRAIN}')} ({len(file_list_train)}) is more than requested ({self.num_files_train}). A subset of files will be used ")
                 file_list_train = file_list_train[:self.num_files_train]
             if (self.num_files_eval < len(file_list_eval)):
-                self.logger.warning(
-                    f"Number of files for evaluation in {os.path.join(self.args.data_folder, f'{DatasetType.VALID}')} ({len(file_list_eval)}) is more than requested ({self.num_files_eval}). A subset of files will be used ")
+                if self.args.my_rank == 0:
+                    self.logger.warning(
+                        f"Number of files for evaluation in {os.path.join(self.args.data_folder, f'{DatasetType.VALID}')} ({len(file_list_eval)}) is more than requested ({self.num_files_eval}). A subset of files will be used ")
                 file_list_eval = file_list_eval[:self.num_files_eval]
         self.args.derive_configurations(file_list_train, file_list_eval)
         self.args.validate()
@@ -333,15 +341,12 @@ class DLIOBenchmark(object):
         self.stats.start_block(epoch, block)
         loader = self.framework.get_loader(dataset_type=DatasetType.TRAIN)
 
-        pbar = tqdm.tqdm(
-            desc=f"epoch {epoch}, rank {self.args.my_rank}",
-            total=max_steps,
-            position=self.args.my_rank,
-            leave=True,
-            disable=self.args.my_rank != 0,
-            bar_format="{l_bar}{bar}|{n}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
-        )
+        pbar = Progress(total=max_steps, print_every=25, unit_name="steps", logger=self.logger.output)
+        pbar.start()
 
+        dft_ai.update(epoch=epoch, step=overall_step)
+
+        self.comm.barrier()
         self.stats.start_loading()
         for batch in loader.next():
             # @ray: fixing uneven data fetch and computation count
@@ -354,9 +359,15 @@ class DLIOBenchmark(object):
                     self.stats.end_block(epoch, block, block_step - 1)
                 break
             self.stats.batch_loaded(epoch, overall_step, block)
-            computation_time = get_computation_time(self.args)
-            if (isinstance(computation_time, dict) and len(computation_time) > 0) or (isinstance(computation_time, float) and  computation_time > 0):
+
+            computation_time = get_computation_time(self.args, step=overall_step)
+            if (isinstance(computation_time, dict) and len(computation_time) > 0) or (isinstance(computation_time, float) and computation_time > 0):
                 self.framework.trace_object("Train", overall_step, 1)
+
+            train_step_overhead_time = self.args.train_step_overhead_time
+            if (isinstance(train_step_overhead_time, dict) and len(train_step_overhead_time) > 0) or (isinstance(train_step_overhead_time, float) and train_step_overhead_time > 0):
+                sleep(train_step_overhead_time)
+
             backward_computation_time = self.args.backward_computation_time
             backward_sync = (overall_step % self.args.accumulate_gradient_steps) == 0
             self.stats.start_compute()
@@ -374,14 +385,16 @@ class DLIOBenchmark(object):
                 self.next_checkpoint_step += self.steps_between_checkpoints
             else:
                 block_step += 1
+            block_step += 1
             overall_step += 1
-            pbar.update()
+            dft_ai.update(step=overall_step)
+            pbar.update(step=overall_step, batch_size=self.batch_size, rank=self.args.my_rank, should_print=overall_step == max_steps)
             # start a new block here
             if block_step == 1 and block != 1:
                 self.stats.start_block(epoch, block)
             self.stats.start_loading()
 
-        pbar.close()
+        pbar.stop(rank=self.args.my_rank)
 
         self.comm.barrier()
         if self.do_checkpoint and (self.steps_between_checkpoints < 0) and (epoch == self.next_checkpoint_epoch):
