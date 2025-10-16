@@ -25,7 +25,6 @@ from dlio_benchmark.utils.utility import Profile, dft_ai, sleep
 HANDLED_FUNCTIONS = {}
 dlp = Profile(MODULE_AI_FRAMEWORK)
 
-
 def implements(torch_function):
     """Register a torch function override for ScalarTensor"""
 
@@ -83,21 +82,27 @@ class TorchFramework(Framework):
 
     @dft_ai.compute
     def compute(self, batch, epoch_number, step, computation_time, backward_computation_time=None, backward_sync=False):
-        if not backward_computation_time:
-            self.model(batch, backward_computation_time)
-            return
-        self.forward(batch, epoch_number, step, computation_time)
-        return self.backward(batch, epoch_number, step, backward_computation_time, backward_sync)
+        self.model(epoch_number, batch, computation_time)
+        # if backward_sync:
+        #     self.comm.barrier()
+        # if not backward_computation_time:
+        #     self.model(batch, backward_computation_time)
+        #     if backward_sync:
+        #         self.comm.barrier()
+        #     return
+        # self.forward(batch, epoch_number, step, computation_time)
+        # self.backward(batch, epoch_number, step, backward_computation_time, backward_sync)
 
     @dft_ai.compute.forward
     def forward(self, batch, epoch_number, step, computation_time):
-        return self.model(batch, computation_time)
-    
+        return self.model(epoch_number, batch, computation_time)
+
     @dft_ai.compute.backward
     def backward(self, batch, epoch_number, step, computation_time, backward_sync):
-        self.model(batch, computation_time)
-        if backward_sync:
-            self.comm.barrier()
+        if computation_time:
+            self.model(epoch_number, batch, computation_time)
+        # if backward_sync:
+        #     self.comm.barrier()
 
     @dlp.log
     def get_loader(self, dataset_type=DatasetType.TRAIN):

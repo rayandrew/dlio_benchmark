@@ -16,6 +16,7 @@
 """
 
 from abc import ABC, abstractmethod
+import numpy as np
 
 from dlio_benchmark.common.enumerations import DatasetType
 from dlio_benchmark.data_loader.data_loader_factory import DataLoaderFactory
@@ -23,7 +24,7 @@ from dlio_benchmark.storage.storage_factory import StorageFactory
 from dlio_benchmark.utils.utility import DLIOMPI
 
 from dlio_benchmark.utils.config import ConfigArguments
-from dlio_benchmark.utils.utility import sleep
+from dlio_benchmark.utils.utility import sleep, PerfTrace
 
 class DummyTraceObject(object):
     def __init__(self, string, step, r):
@@ -35,12 +36,12 @@ class DummyTraceObject(object):
     def __exit__(self, string, step, r):
         pass
 
-
 class Framework(ABC):
     def __init__(self):
         self.args = ConfigArguments.get_instance()
         self.output_folder = self.args.output_folder
         self.comm = DLIOMPI.get_instance().comm()
+        self.rng = np.random.default_rng(self.args.seed + self.args.my_rank)
 
 
     @abstractmethod
@@ -67,8 +68,14 @@ class Framework(ABC):
     def trace_object(self, string, step, r):
         pass
 
-    def model(epoch, batch, computation_time):
-        sleep(computation_time)
+    def model(self, epoch, batch, computation_time, req=None):
+        x = 1.0
+        dur = sleep(computation_time, dry_run=True, rng=self.rng)
+        trace = PerfTrace.get_instance()
+        t_start = trace.get_time()
+        t_end = t_start + (dur * 1e6)  # convert to microseconds
+        while trace.get_time() < t_end:
+            x = x * 0.9999999 + 0.0000001
 
     @abstractmethod
     def compute(self, batch, epoch_number, step, computation_time, backward_computation_time=None, backward_sync=False):
