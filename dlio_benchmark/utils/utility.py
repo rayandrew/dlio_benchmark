@@ -282,6 +282,14 @@ def _apply_bounds(sleep_time, numpy_config, fallback_value=None):
 
     return sleep_time
 
+def sample_genpareto(xi, mu, sigma, size, rng=np.random):
+    eps = np.finfo(float).eps
+    u = np.clip(rng.random(size), eps, 1 - eps)
+
+    if np.isclose(xi, 0.0):
+        return mu - sigma * np.log1p(-u)
+    else:
+        return mu + (sigma / xi) * (np.power(1 - u, -xi) - 1)
 
 def _convert_to_numpy_params(dist_type, config):
     numpy_config = {"type": dist_type}
@@ -337,11 +345,21 @@ def _convert_to_numpy_params(dist_type, config):
             numpy_config["shape"] = config["shape"]
         if "scale" in config:
             numpy_config["scale"] = config["scale"]
-            
+
+    elif dist_type == "pareto":
+        if "shape" in config:
+            numpy_config["alpha"] = config["shape"]
+        if "scale" in config:
+            numpy_config["scale"] = config["scale"]
+        if "loc" in config:
+            numpy_config["loc"] = config["loc"]
+
     return numpy_config
 
-
-def sleep(config, dry_run=False):
+def sleep(config, dry_run=False, rng=None):
+    if rng is None:
+        rng = np.random
+    
     sleep_time = 0.0
     if isinstance(config, dict) and len(config) > 0:
         if "type" in config:
@@ -350,16 +368,16 @@ def sleep(config, dry_run=False):
             
             if dist_type == "normal":
                 if "loc" in numpy_config and "scale" in numpy_config:
-                    sleep_time = np.random.normal(numpy_config["loc"], numpy_config["scale"])
+                    sleep_time = rng.normal(numpy_config["loc"], numpy_config["scale"])
                     sleep_time = _apply_bounds(sleep_time, numpy_config, numpy_config["loc"])
             elif dist_type == "uniform":
                 if "low" in numpy_config and "high" in numpy_config:
-                    sleep_time = np.random.uniform(numpy_config["low"], numpy_config["high"])
+                    sleep_time = rng.uniform(numpy_config["low"], numpy_config["high"])
                     midpoint = (numpy_config["low"] + numpy_config["high"]) / 2
                     sleep_time = _apply_bounds(sleep_time, numpy_config, midpoint)
             elif dist_type == "gamma":
                 if "shape" in numpy_config and "scale" in numpy_config:
-                    sleep_time = np.random.gamma(numpy_config["shape"], numpy_config["scale"])
+                    sleep_time = rng.gamma(numpy_config["shape"], numpy_config["scale"])
                     if numpy_config["shape"] > 1:
                         mode = (numpy_config["shape"] - 1) * numpy_config["scale"]
                     else:
@@ -367,23 +385,27 @@ def sleep(config, dry_run=False):
                     sleep_time = _apply_bounds(sleep_time, numpy_config, mode)
             elif dist_type == "exponential":
                 if "scale" in numpy_config:
-                    sleep_time = np.random.exponential(numpy_config["scale"])
+                    sleep_time = rng.exponential(numpy_config["scale"])
                     mean = numpy_config["scale"]
                     sleep_time = _apply_bounds(sleep_time, numpy_config, mean)
             elif dist_type == "lognormal":
                 if "sigma" in numpy_config:
                     mean = numpy_config.get("mean", 0.0)
-                    sleep_time = np.random.lognormal(mean, numpy_config["sigma"])
+                    sleep_time = rng.lognormal(mean, numpy_config["sigma"])
                     median = np.exp(mean)
                     sleep_time = _apply_bounds(sleep_time, numpy_config, median)
             elif dist_type == "weibull":
                 if "shape" in numpy_config and "scale" in numpy_config:
-                    sleep_time = numpy_config["scale"] * np.random.weibull(numpy_config["shape"])
+                    sleep_time = numpy_config["scale"] * rng.weibull(numpy_config["shape"])
                     sleep_time = _apply_bounds(sleep_time, numpy_config, numpy_config["scale"])
             elif dist_type == "poisson":
                 if "lam" in numpy_config:
-                    sleep_time = np.random.poisson(numpy_config["lam"])
+                    sleep_time = rng.poisson(numpy_config["lam"])
                     sleep_time = _apply_bounds(sleep_time, numpy_config, numpy_config["lam"])
+            elif dist_type == "pareto":
+                if "shape" in numpy_config and "scale" in numpy_config and "loc" in numpy_config:
+                    sleep_time = sample_genpareto(xi=numpy_config["shape"], mu=numpy_config["loc"], sigma=numpy_config["scale"], size=1, rng=rng)
+                    sleep_time = _apply_bounds(sleep_time, numpy_config, numpy_config["loc"])
             elif dist_type == "mixture":
                 if "components" in config and "n_components" in config:
                     components = config["components"]
@@ -394,7 +416,7 @@ def sleep(config, dry_run=False):
                         total_weight = sum(weights)
                         normalized_weights = [w/total_weight for w in weights]
 
-                        component_idx = np.random.choice(len(components), p=normalized_weights)
+                        component_idx = rng.choice(len(components), p=normalized_weights)
                         selected_component = components[component_idx]
 
                         component_config = selected_component.get("params", {})
@@ -404,7 +426,7 @@ def sleep(config, dry_run=False):
                         if "max_bound" in config:
                             component_config["max_bound"] = config["max_bound"]
 
-                        sleep_time = sleep(component_config, dry_run=True)
+                        sleep_time = sleep(component_config, dry_run=True, rng=rng)
                     else:
                         sleep_time = 0.0
                 else:
@@ -413,7 +435,7 @@ def sleep(config, dry_run=False):
             # Legacy support for configurations without explicit type
             if "mean" in config:
                 if "stdev" in config:
-                    sleep_time = np.random.normal(config["mean"], config["stdev"])
+                    sleep_time = rng.normal(config["mean"], config["stdev"])
                 else:
                     sleep_time = config["mean"]
     elif isinstance(config, (int, float)):
