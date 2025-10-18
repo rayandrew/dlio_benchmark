@@ -50,7 +50,7 @@ class FormatReader(ABC):
         else:
             self.file_map = self._args.val_file_map
             self.global_index_map = self._args.val_global_index_map
-        self.rng = np.random.default_rng(self._args.seed + (self._args.my_rank * thread_index))
+        self.rng = np.random.default_rng(self._args.seed + (self._args.my_rank * abs(thread_index)))
 
     @dft_ai.data.preprocess
     def preprocess(self, a=None):
